@@ -1,5 +1,6 @@
 """
-pipeline.py - End-to-end pipeline: email_stream → classifier → router → workflow agent.
+pipeline.py - End-to-end pipeline:
+  email_stream → classifier → orchestrator → workflow agents (parallel) → merged reply
 
 Usage:
     python pipeline.py
@@ -12,7 +13,7 @@ from dotenv import load_dotenv
 
 from email_stream import email_stream
 from classifier_agent import classify
-from router_agent import route
+from orchestrator_agent import orchestrate
 
 load_dotenv()
 
@@ -40,21 +41,24 @@ def main():
               f"priority={classification['priority']}  type={classification['type']}")
         print(f"                reason: {classification['reason']}")
 
-        # Step 2: Route + run workflow
-        print(f"  [router]      → {classification['queue']}")
-        result = route(classification, email)
+        # Step 2: Orchestrate (decompose → fan out → merge)
+        result = orchestrate(classification, email)
 
-        # Step 3: Print result
-        print(f"  [workflow]    skill={result.skill_used}  action={result.action}  "
-              f"escalated={result.escalated}")
-        print(f"  [ticket]      {result.ticket_id or '(none)'}")
+        multi = len(result.agents_used) > 1
+        print(f"  [orchestrator] agents={result.agents_used}  "
+              f"{'MULTI-AGENT  ' if multi else ''}"
+              f"action={result.action}  escalated={result.escalated}")
 
-        if result.tool_calls:
-            print(f"  [tools used]  {', '.join(c['tool'] for c in result.tool_calls)}")
+        for sub in result.results:
+            print(f"    ↳ [{sub.skill_used}]  ticket={sub.ticket_id or '(none)'}  "
+                  f"tools={[c['tool'] for c in sub.tool_calls]}")
 
-        if result.reply_drafted:
-            preview = result.reply_drafted.replace("\n", " ")[:200]
-            print(f"  [reply]       {preview}...")
+        if result.ticket_ids:
+            print(f"  [tickets]     {', '.join(result.ticket_ids)}")
+
+        if result.final_reply:
+            preview = result.final_reply.replace("\n", " ")[:220]
+            print(f"  [final reply] {preview}...")
 
         print("=" * 70)
 

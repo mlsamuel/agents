@@ -246,3 +246,8 @@ class WorkflowAgent:
     def run(self, email: dict, classification: dict) -> WorkflowResult:
         skill = select_skill(self._client, self.skills, email, classification)
         return asyncio.run(_run_workflow(self._client, skill, email, classification))
+
+    async def async_run(self, email: dict, classification: dict) -> WorkflowResult:
+        """Async variant — use this inside asyncio.gather() from the orchestrator."""
+        skill = select_skill(self._client, self.skills, email, classification)
+        return await _run_workflow(self._client, skill, email, classification)
