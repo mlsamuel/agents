@@ -41,6 +41,9 @@ Valid agent keys:
   - returns            (returns, exchanges, replacements)
   - general            (everything else, or when unsure)
 
+Email type will be one of: Incident, Problem, Request, Change, Question, Complaint.
+Email priority will be one of: critical, high, medium, low, very_low.
+
 Rules:
 - Use the minimum set of agents that fully covers the email's concerns.
 - Most emails need only 1 agent.

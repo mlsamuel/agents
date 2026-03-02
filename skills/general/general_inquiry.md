@@ -1,7 +1,7 @@
 ---
 name: general_inquiry
 queue: General
-types: [Request, Question, Complaint, Incident]
+types: [Incident, Problem, Request, Change, Question, Complaint]
 tools: [lookup_customer, create_ticket, send_reply]
 ---
 
