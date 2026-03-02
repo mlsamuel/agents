@@ -1,0 +1,17 @@
+{
+    "version": "0.2.0",
+    "configurations": [
+        {
+            "name": "Classifier Agent",
+            "type": "debugpy",
+            "request": "launch",
+            "program": "${workspaceFolder}/classifier_agent.py",
+            "python": "/opt/anaconda3/bin/python",
+            "args": ["--limit", "5", "--language", "en"],
+            "cwd": "${workspaceFolder}",
+            "envFile": "${workspaceFolder}/.env",
+            "console": "integratedTerminal",
+            "justMyCode": false
+        }
+    ]
+}
