@@ -14,6 +14,8 @@ from dotenv import load_dotenv
 from email_stream import email_stream
 from classifier_agent import classify
 from orchestrator_agent import orchestrate
+from input_screener import screen_email
+from email_sanitizer import sanitize
 
 load_dotenv()
 
@@ -35,13 +37,27 @@ def main():
         print(f"\n EMAIL: {subject[:65]}")
         print("-" * 70)
 
-        # Step 1: Classify
+        # Step 1: Screen for injection (on raw email, before any sanitization)
+        screen = screen_email(client, email)
+        if not screen.safe:
+            print(f"  [screener]    QUARANTINED (score={screen.risk_score}/10) — {screen.reason}")
+            print("=" * 70)
+            continue
+        if screen.risk_score >= 3:
+            print(f"  [screener]    warning score={screen.risk_score}/10 — {screen.reason}")
+
+        # Step 2: Sanitize (pattern strip)
+        email, warnings = sanitize(email)
+        if warnings:
+            print(f"  [sanitizer]   stripped {len(warnings)} pattern(s)")
+
+        # Step 3: Classify
         classification = classify(client, email)
         print(f"  [classifier]  queue={classification['queue']}  "
               f"priority={classification['priority']}  type={classification['type']}")
         print(f"                reason: {classification['reason']}")
 
-        # Step 2: Orchestrate (decompose → fan out → merge)
+        # Step 4: Orchestrate (decompose → fan out → merge)
         result = orchestrate(classification, email)
 
         multi = len(result.agents_used) > 1
