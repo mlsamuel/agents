@@ -29,7 +29,7 @@ from dotenv import load_dotenv
 from email_stream import email_stream
 from classifier_agent import classify
 from orchestrator_agent import orchestrate
-from eval_agent import judge
+from eval_agent import judge, _write_output, _write_json
 from logger import get_logger
 
 log = get_logger(__name__)
@@ -268,29 +268,52 @@ def _apply_proposals(all_proposals: list[dict]) -> None:
 # ── Re-evaluate ──────────────────────────────────────────────────────────────
 
 def _reeval(client: anthropic.Anthropic, failing: list[dict]) -> list[dict]:
-    """Re-run orchestrate + judge for the same emails. Returns updated records."""
-    # Build a lookup: email index → record (so we can stream and match)
+    """Re-run orchestrate + judge for the same emails. Returns full output sections."""
     target_indices = {r["index"] for r in failing}
     updated = []
 
-    # Stream from the beginning; collect only the target emails
+    seen: set[int] = set()
+    max_index = max(target_indices)
     stream = email_stream(language="en", limit=None, offset=0)
     for i, email in enumerate(stream, 1):
+        if i > max_index:
+            break
         if i not in target_indices:
             continue
+        seen.add(i)
         ground_truth = email.get("answer") or ""
         if not ground_truth:
+            if seen == target_indices:
+                break
             continue
         try:
             classification = classify(client, email)
             result = orchestrate(classification, email)
             generated = result.final_reply or ""
+            internal_summary = result.results[0].internal_summary if result.results else ""
+            skills_str = ", ".join(s.skill_used for s in result.results)
+            all_tools = [c["tool"] for s in result.results for c in s.tool_calls]
+            tools_str = ", ".join(all_tools) if all_tools else "(none)"
             score = judge(client, email, ground_truth, generated)
             avg = (score["action"] + score["completeness"] + score["tone"]) / 3
-            updated.append({"index": i, "skills": ", ".join(s.skill_used for s in result.results), "score": score, "avg": avg})
+            updated.append({
+                "index": i,
+                "subject": email.get("subject") or "(no subject)",
+                "body": email.get("body") or "",
+                "queue": classification["queue"],
+                "type": classification["type"],
+                "priority": classification["priority"],
+                "skills": skills_str,
+                "tools": tools_str,
+                "ground_truth": ground_truth,
+                "generated": generated,
+                "internal_summary": internal_summary,
+                "score": score,
+                "avg": avg,
+            })
         except Exception as exc:
             log.error("Re-eval failed for email %d: %s", i, exc)
-        if len(updated) == len(target_indices):
+        if seen == target_indices:
             break
 
     return updated
@@ -352,9 +375,12 @@ def main():
     for skill_name, group in by_skill.items():
         skill_info = all_skills.get(skill_name)
         print(f"\nAnalysing skill '{skill_name}' ({len(group)} failing email(s)) …")
-        proposals = _generate_proposals(client, skill_name, skill_info, group, kb)
-        print(f"  → {len(proposals)} proposal(s)")
-        all_proposals.extend(proposals)
+        try:
+            proposals = _generate_proposals(client, skill_name, skill_info, group, kb)
+            print(f"  → {len(proposals)} proposal(s)")
+            all_proposals.extend(proposals)
+        except Exception as exc:
+            log.error("Proposal generation failed for skill '%s': %s", skill_name, exc)
 
     if not all_proposals:
         print("\nNo proposals generated.")
@@ -376,6 +402,12 @@ def main():
     print("\nRe-evaluating …")
     after = _reeval(client, failing)
     _print_delta(failing, after)
+
+    # Merge refreshed sections back into the full records list and update files
+    after_map = {r["index"]: r for r in after}
+    merged = [after_map.get(r["index"], r) for r in records]
+    _write_json(merged)
+    _write_output(merged)
 
 
 if __name__ == "__main__":
