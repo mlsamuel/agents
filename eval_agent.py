@@ -161,6 +161,13 @@ def main():
 
     if args.save and output_sections:
         _write_output(output_sections, include_internal_summary=args.internal_summary)
+        _write_json(output_sections)
+
+
+def _write_json(sections: list[dict], path: str = "eval_results.json") -> None:
+    """Write structured eval results for downstream processing by improve_agent.py."""
+    Path(path).write_text(json.dumps(sections, indent=2), encoding="utf-8")
+    print(f"Saved to {path}")
 
 
 def _write_output(sections: list[dict], path: str = "eval_output.md", include_internal_summary: bool = True) -> None:

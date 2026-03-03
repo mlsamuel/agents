@@ -187,8 +187,8 @@ def escalate_to_human(ticket_id: str, reason: str) -> dict:
 
 
 @mcp.tool()
-def send_reply(ticket_id: str, message: str) -> dict:
-    """Send a reply message to the customer on a ticket."""
+def send_reply(message: str, ticket_id: str = "") -> dict:
+    """Send a reply message to the customer. ticket_id is optional — omit when no ticket has been created yet (e.g. clarification replies)."""
     return {
         "ticket_id": ticket_id,
         "sent": True,

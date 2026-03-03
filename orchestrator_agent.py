@@ -20,7 +20,10 @@ from dataclasses import dataclass, field
 import anthropic
 from dotenv import load_dotenv
 
+from logger import get_logger
 from workflow_agent import WorkflowAgent, WorkflowResult
+
+log = get_logger(__name__)
 
 load_dotenv()
 
@@ -118,9 +121,15 @@ async def _fan_out(
 ) -> list[WorkflowResult]:
     agents = [WorkflowAgent(key) for key in agent_keys]
     if parallel:
-        return list(await asyncio.gather(
-            *[a.async_run(email, classification) for a in agents]
-        ))
+        raw = await asyncio.gather(
+            *[a.async_run(email, classification) for a in agents],
+            return_exceptions=True,
+        )
+        for i, r in enumerate(raw):
+            if isinstance(r, Exception):
+                log.error("Agent '%s' failed: %s: %s", agent_keys[i], type(r).__name__, r, exc_info=r)
+                raise r
+        return list(raw)
     # Sequential: run one at a time
     results = []
     for agent in agents:

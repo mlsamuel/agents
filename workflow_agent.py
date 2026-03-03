@@ -23,6 +23,9 @@ from dotenv import load_dotenv
 from mcp import ClientSession
 from mcp.client.stdio import stdio_client, StdioServerParameters
 
+from logger import get_logger
+log = get_logger(__name__)
+
 load_dotenv()
 
 SKILLS_DIR = Path(__file__).parent / "skills"
@@ -217,7 +220,11 @@ async def _run_workflow(
                         if mcp_result.content
                         else "{}"
                     )
-                    result_data = json.loads(result_text)
+                    try:
+                        result_data = json.loads(result_text)
+                    except json.JSONDecodeError:
+                        log.error("Tool '%s' returned non-JSON: %s", block.name, result_text[:200])
+                        result_data = {"error": result_text}
 
                     # Track ticket IDs, sent reply, and escalations
                     if "ticket_id" in result_data:
@@ -269,4 +276,10 @@ class WorkflowAgent:
     async def async_run(self, email: dict, classification: dict) -> WorkflowResult:
         """Async variant — use this inside asyncio.gather() from the orchestrator."""
         skill = select_skill(self._client, self.skills, email, classification)
-        return await _run_workflow(self._client, skill, email, classification)
+        try:
+            return await _run_workflow(self._client, skill, email, classification)
+        except Exception as exc:
+            log.error("WorkflowAgent '%s' (skill=%s) failed: %s: %s",
+                      self.agent_key, skill.get('name', '?'), type(exc).__name__, exc,
+                      exc_info=True)
+            raise
