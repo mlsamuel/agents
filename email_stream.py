@@ -18,6 +18,7 @@ def email_stream(
     path: str = DATA_PATH,
     language: str | None = "en",   # filter to "en" or "de" or None for all
     limit: int | None = None,
+    offset: int = 0,
     shuffle: bool = False,
     random_seed: int = 42,
 ) -> Iterator[dict]:
@@ -34,6 +35,9 @@ def email_stream(
 
     if shuffle:
         df = df.sample(frac=1, random_state=random_seed).reset_index(drop=True)
+
+    if offset:
+        df = df.iloc[offset:]
 
     if limit:
         df = df.head(limit)

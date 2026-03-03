@@ -8,6 +8,7 @@ dimensions (action, completeness, tone) scored 1–5.
 Usage:
     python eval_agent.py               # 3 emails, saves side-by-side to eval_output.md
     python eval_agent.py --limit 5
+    python eval_agent.py --offset 2 --limit 1   # run only the 3rd email
     python eval_agent.py --no-save     # skip writing the output file
 """
 
@@ -72,6 +73,7 @@ def judge(client: anthropic.Anthropic, email: dict, ground_truth: str, generated
 def main():
     parser = argparse.ArgumentParser()
     parser.add_argument("--limit", type=int, default=3)
+    parser.add_argument("--offset", type=int, default=0, help="Skip the first N emails")
     parser.add_argument("--language", type=str, default="en")
     parser.add_argument("--save", default=True, action=argparse.BooleanOptionalAction,
                         help="Write side-by-side replies to eval_output.md (default: true)")
@@ -81,10 +83,10 @@ def main():
     scores = []
     output_sections = []
 
-    print(f"Eval — {args.limit} email(s), language={args.language}\n")
+    print(f"Eval — {args.limit} email(s), offset={args.offset}, language={args.language}\n")
     print("=" * 70)
 
-    for i, email in enumerate(email_stream(language=args.language, limit=args.limit), 1):
+    for i, email in enumerate(email_stream(language=args.language, limit=args.limit, offset=args.offset), args.offset + 1):
         ground_truth = email.get("answer") or ""
         if not ground_truth:
             print(f"[{i}] skipped — no ground truth answer\n")

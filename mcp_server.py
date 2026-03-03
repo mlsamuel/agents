@@ -27,9 +27,42 @@ import signal
 import string
 import sys
 from datetime import datetime, timedelta
+from pathlib import Path
 from mcp.server.fastmcp import FastMCP
 
+try:
+    import numpy as np
+    from sentence_transformers import SentenceTransformer
+    _ST_AVAILABLE = True
+except ImportError:
+    _ST_AVAILABLE = False
+
 mcp = FastMCP("SupportBackend")
+
+# ── knowledge base ──────────────────────────────────────────────────────────────
+
+_KB_ENTRIES: list[dict] = []
+_KB_EMBEDDINGS = None   # np.ndarray shape (N, dim) once loaded
+_EMBED_MODEL = None     # SentenceTransformer instance
+
+
+def _load_knowledge_base() -> None:
+    global _KB_ENTRIES, _KB_EMBEDDINGS, _EMBED_MODEL
+    if not _ST_AVAILABLE:
+        return
+    try:
+        kb_path = Path(__file__).parent / "data" / "knowledge_base.json"
+        _KB_ENTRIES = json.loads(kb_path.read_text())
+        _EMBED_MODEL = SentenceTransformer("all-MiniLM-L6-v2")
+        questions = [e["question"] for e in _KB_ENTRIES]
+        _KB_EMBEDDINGS = _EMBED_MODEL.encode(questions, convert_to_numpy=True)
+        log.debug("Knowledge base loaded: %d entries", len(_KB_ENTRIES))
+    except Exception as exc:
+        log.warning("Knowledge base unavailable: %s", exc)
+        _KB_ENTRIES = []
+
+
+_load_knowledge_base()
 
 # ── helpers ────────────────────────────────────────────────────────────────────
 
@@ -44,15 +77,30 @@ def _days_ago(n: int) -> str:
 
 # ── tools ──────────────────────────────────────────────────────────────────────
 
+_FIRST_NAMES = ["Jordan", "Taylor", "Morgan", "Riley", "Casey", "Quinn", "Avery",
+                "Blake", "Drew", "Jamie", "Reese", "Skyler", "Parker", "Sage", "Robin"]
+_LAST_NAMES  = ["Chen", "Patel", "Smith", "Garcia", "Kim", "Müller", "Okafor",
+                "Nguyen", "Torres", "Eriksson", "Russo", "Yamamoto", "Singh", "Costa"]
+
+def _customer_from_keyword(keyword: str) -> tuple[str, str]:
+    """Derive a stable (first, last) name from the keyword so the same search
+    always returns the same customer, but different keywords return different ones."""
+    h = hash(keyword.lower().strip())
+    first = _FIRST_NAMES[h % len(_FIRST_NAMES)]
+    last  = _LAST_NAMES[(h // len(_FIRST_NAMES)) % len(_LAST_NAMES)]
+    return first, last
+
 @mcp.tool()
 def lookup_customer(keyword: str) -> dict:
     """Look up a customer record by name or subject keyword. Returns customer profile."""
+    first, last = _customer_from_keyword(keyword)
+    rng = random.Random(hash(keyword.lower().strip()))
     return {
-        "customer_id": "CUST-" + "".join(random.choices(string.digits, k=5)),
-        "name": "Alex Morgan",
-        "email": "alex.morgan@example.com",
-        "account_tier": random.choice(["standard", "premium", "enterprise"]),
-        "since": _days_ago(random.randint(100, 1000)),
+        "customer_id": "CUST-" + "".join(rng.choices(string.digits, k=5)),
+        "name": f"{first} {last}",
+        "email": f"{first.lower()}.{last.lower()}@example.com",
+        "account_tier": rng.choice(["standard", "premium", "enterprise"]),
+        "since": _days_ago(rng.randint(100, 1000)),
         "keyword_matched": keyword,
     }
 
@@ -149,6 +197,53 @@ def send_reply(ticket_id: str, message: str) -> dict:
     }
 
 
+@mcp.tool()
+def search_knowledge_base(query: str, category: str = "", top_k: int = 3) -> list[dict]:
+    """Search the support knowledge base for policy answers relevant to a query.
+
+    Returns up to top_k entries with answer text and a relevance score (0–1).
+    Use this before creating a ticket to check whether a direct answer exists.
+
+    Args:
+        query:    The customer's question or topic to look up.
+        category: Optional filter — one of: billing, returns, technical, general.
+                  Leave blank to search all categories.
+        top_k:    Maximum number of results to return (default 3).
+    """
+    if not _KB_ENTRIES or _KB_EMBEDDINGS is None or _EMBED_MODEL is None:
+        return []
+
+    corpus = _KB_ENTRIES
+    embeddings = _KB_EMBEDDINGS
+
+    if category:
+        indices = [i for i, e in enumerate(_KB_ENTRIES) if e.get("category") == category]
+        if indices:
+            corpus = [_KB_ENTRIES[i] for i in indices]
+            embeddings = _KB_EMBEDDINGS[indices]
+
+    q_vec = _EMBED_MODEL.encode([query], convert_to_numpy=True)[0]
+    norms = np.linalg.norm(embeddings, axis=1) * np.linalg.norm(q_vec)
+    scores = np.where(norms > 0, embeddings @ q_vec / norms, 0.0)
+
+    top_indices = np.argsort(scores)[::-1][:top_k]
+    results = []
+    for idx in top_indices:
+        score = float(scores[idx])
+        if score < 0.25:
+            break
+        entry = corpus[idx]
+        results.append({
+            "id": entry["id"],
+            "category": entry["category"],
+            "topic": entry["topic"],
+            "question": entry["question"],
+            "answer": entry["answer"],
+            "score": round(score, 3),
+        })
+    return results
+
+
 # ── sandboxed code execution ────────────────────────────────────────────────────
 
 _BLOCKED_MODULES = frozenset({
@@ -224,6 +319,9 @@ _TOOL_REGISTRY: dict[str, dict] = {
         "send_reply": send_reply,
         "escalate_to_human": escalate_to_human,
     },
+    "kb": {
+        "search_knowledge_base": search_knowledge_base,
+    },
 }
 
 
@@ -241,6 +339,7 @@ def run_code(code: str, allowed_tools: list[str], timeout: int = 10) -> dict:
       orders  - orders.check_order_status(order_ref), orders.process_refund(order_ref, reason)
       tickets - tickets.create_ticket(subject, body, queue, priority, ticket_type)
       comms   - comms.send_reply(ticket_id, message), comms.escalate_to_human(ticket_id, reason)
+      kb      - kb.search_knowledge_base(query, category, top_k)
 
     The code runs with restricted builtins — no imports, no filesystem, no network.
     Use print() to produce output; the captured stdout is returned.
