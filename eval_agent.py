@@ -48,7 +48,7 @@ comment should be one short sentence about the biggest gap (or "none" if all goo
 def judge(client: anthropic.Anthropic, email: dict, ground_truth: str, generated: str) -> dict:
     subject = email.get("subject") or "(no subject)"
     body = (email.get("body") or "")[:800]
-    gt = ground_truth[:2000]
+    gt = ground_truth[:600]
     gen = generated[:2000]
 
     msg = client.messages.create(
@@ -77,6 +77,8 @@ def main():
     parser.add_argument("--language", type=str, default="en")
     parser.add_argument("--save", default=True, action=argparse.BooleanOptionalAction,
                         help="Write side-by-side replies to eval_output.md (default: true)")
+    parser.add_argument("--internal-summary", default=False, action=argparse.BooleanOptionalAction,
+                        help="Include ### Internal summary sections in eval_output.md (default: false)")
     args = parser.parse_args()
 
     client = anthropic.Anthropic()
@@ -158,10 +160,10 @@ def main():
         print(f"  overall:      {overall:.1f}/5")
 
     if args.save and output_sections:
-        _write_output(output_sections)
+        _write_output(output_sections, include_internal_summary=args.internal_summary)
 
 
-def _write_output(sections: list[dict], path: str = "eval_output.md") -> None:
+def _write_output(sections: list[dict], path: str = "eval_output.md", include_internal_summary: bool = True) -> None:
     lines = [
         f"# Eval output — {datetime.now().strftime('%Y-%m-%d %H:%M')}",
         f"*{len(sections)} email(s)*",
@@ -204,7 +206,7 @@ def _write_output(sections: list[dict], path: str = "eval_output.md") -> None:
                     "```",
                     "",
                 ]
-                if s["internal_summary"]
+                if include_internal_summary and s["internal_summary"]
                 else []
             ),
         ]
