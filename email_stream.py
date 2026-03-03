@@ -16,7 +16,7 @@ DATA_PATH = "data/emails.csv"
 
 def email_stream(
     path: str = DATA_PATH,
-    language: str | None = None,   # filter to "en" or "de" or None for all
+    language: str | None = "en",   # filter to "en" or "de" or None for all
     limit: int | None = None,
     shuffle: bool = False,
     random_seed: int = 42,

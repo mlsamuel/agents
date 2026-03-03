@@ -9,13 +9,23 @@ Tools available to workflow agents:
   process_refund        - issue a refund
   escalate_to_human     - hand off to a human agent
   send_reply            - send a reply to the customer
+  run_code              - execute sandboxed Python with access to approved tool namespaces
 
 Run standalone (for testing):
   conda run -n base python mcp_server.py
 """
 
+from logger import get_logger  # also silences third-party loggers on import
+
+log = get_logger(__name__)
+
+import ast
+import io
+import json
 import random
+import signal
 import string
+import sys
 from datetime import datetime, timedelta
 from mcp.server.fastmcp import FastMCP
 
@@ -136,6 +146,153 @@ def send_reply(ticket_id: str, message: str) -> dict:
         "sent": True,
         "timestamp": datetime.now().strftime("%Y-%m-%d %H:%M"),
         "preview": message[:120] + ("..." if len(message) > 120 else ""),
+    }
+
+
+# ── sandboxed code execution ────────────────────────────────────────────────────
+
+_BLOCKED_MODULES = frozenset({
+    "os", "sys", "subprocess", "multiprocessing", "threading", "concurrent",
+    "signal", "ctypes", "socket", "ssl", "http", "urllib", "requests", "httpx",
+    "aiohttp", "importlib", "pkgutil", "runpy", "code", "builtins", "types",
+    "gc", "inspect", "pickle", "shelve", "sqlite3", "pathlib", "shutil",
+    "glob", "tempfile", "pty", "mmap",
+})
+
+_SAFE_BUILTINS = {
+    "print": print, "len": len, "range": range, "enumerate": enumerate,
+    "zip": zip, "map": map, "filter": filter, "sorted": sorted,
+    "list": list, "dict": dict, "set": set, "tuple": tuple,
+    "str": str, "int": int, "float": float, "bool": bool,
+    "min": min, "max": max, "sum": sum, "abs": abs, "round": round,
+    "isinstance": isinstance, "repr": repr,
+    "json": json,
+}
+
+
+def _ast_check(source: str) -> str | None:
+    """Return an error string if the source contains blocked patterns, else None."""
+    try:
+        tree = ast.parse(source)
+    except SyntaxError as e:
+        return f"SyntaxError: {e}"
+
+    for node in ast.walk(tree):
+        if isinstance(node, ast.Import):
+            for alias in node.names:
+                root = alias.name.split(".")[0]
+                if root in _BLOCKED_MODULES:
+                    return f"Import of '{alias.name}' is not allowed"
+        elif isinstance(node, ast.ImportFrom):
+            if node.module:
+                root = node.module.split(".")[0]
+                if root in _BLOCKED_MODULES:
+                    return f"Import from '{node.module}' is not allowed"
+        elif isinstance(node, ast.Attribute):
+            if node.attr.startswith("__") and node.attr.endswith("__"):
+                return f"Access to dunder attribute '{node.attr}' is not allowed"
+        elif isinstance(node, ast.Call):
+            if isinstance(node.func, ast.Name) and node.func.id in ("exec", "eval", "compile"):
+                return f"Call to '{node.func.id}()' is not allowed"
+
+    return None
+
+
+def _make_namespace(fns: dict):
+    """Create a simple namespace object where each key becomes an attribute."""
+    ns = type("Namespace", (), {})()
+    for name, fn in fns.items():
+        setattr(ns, name, fn)
+    return ns
+
+
+# Maps namespace name → {method: backend_function}
+# Each namespace groups existing MCP tool functions under a logical integration name.
+_TOOL_REGISTRY: dict[str, dict] = {
+    "crm": {
+        "lookup_customer": lookup_customer,
+        "get_ticket_history": get_ticket_history,
+    },
+    "orders": {
+        "check_order_status": check_order_status,
+        "process_refund": process_refund,
+    },
+    "tickets": {
+        "create_ticket": create_ticket,
+    },
+    "comms": {
+        "send_reply": send_reply,
+        "escalate_to_human": escalate_to_human,
+    },
+}
+
+
+def _timeout_handler(signum, frame):
+    raise TimeoutError("Code execution timed out")
+
+
+@mcp.tool()
+def run_code(code: str, allowed_tools: list[str], timeout: int = 10) -> dict:
+    """
+    Execute a sandboxed Python snippet with access to approved tool namespaces.
+
+    Available namespaces (specify in allowed_tools):
+      crm     - crm.lookup_customer(keyword), crm.get_ticket_history(customer_id)
+      orders  - orders.check_order_status(order_ref), orders.process_refund(order_ref, reason)
+      tickets - tickets.create_ticket(subject, body, queue, priority, ticket_type)
+      comms   - comms.send_reply(ticket_id, message), comms.escalate_to_human(ticket_id, reason)
+
+    The code runs with restricted builtins — no imports, no filesystem, no network.
+    Use print() to produce output; the captured stdout is returned.
+
+    Example:
+      code = \"\"\"
+      customer = crm.lookup_customer(keyword="Jane")
+      orders_list = crm.get_ticket_history(customer_id=customer["customer_id"])
+      for t in orders_list:
+          print(t["ticket_id"], t["status"])
+      \"\"\"
+      allowed_tools = ["crm"]
+    """
+    timeout = max(1, min(timeout, 30))
+
+    rejection = _ast_check(code)
+    if rejection:
+        return {"stdout": "", "error": rejection, "exit_code": -1}
+
+    # Build safe globals: restricted builtins + requested tool namespaces
+    safe_globals = {"__builtins__": _SAFE_BUILTINS}
+    for ns_name in allowed_tools:
+        if ns_name in _TOOL_REGISTRY:
+            safe_globals[ns_name] = _make_namespace(_TOOL_REGISTRY[ns_name])
+
+    # Capture stdout and enforce wall-clock timeout via SIGALRM
+    captured = io.StringIO()
+    old_stdout = sys.stdout
+    sys.stdout = captured
+
+    old_handler = signal.signal(signal.SIGALRM, _timeout_handler)
+    signal.alarm(timeout)
+
+    try:
+        exec(code, safe_globals)  # noqa: S102
+        exit_code = 0
+        error = None
+    except TimeoutError as e:
+        exit_code = -1
+        error = str(e)
+    except Exception as e:
+        exit_code = -1
+        error = f"{type(e).__name__}: {e}"
+    finally:
+        signal.alarm(0)
+        signal.signal(signal.SIGALRM, old_handler)
+        sys.stdout = old_stdout
+
+    return {
+        "stdout": captured.getvalue()[:8192],
+        "error": error,
+        "exit_code": exit_code,
     }
 
 

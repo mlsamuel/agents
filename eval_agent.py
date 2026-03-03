@@ -6,13 +6,15 @@ generated reply against the ground-truth `answer` column on three
 dimensions (action, completeness, tone) scored 1–5.
 
 Usage:
-    python eval_agent.py               # 3 emails
+    python eval_agent.py               # 3 emails, saves side-by-side to eval_output.md
     python eval_agent.py --limit 5
-    python eval_agent.py --limit 5 --language en
+    python eval_agent.py --no-save     # skip writing the output file
 """
 
 import argparse
 import json
+from datetime import datetime
+from pathlib import Path
 import anthropic
 from dotenv import load_dotenv
 
@@ -71,15 +73,18 @@ def main():
     parser = argparse.ArgumentParser()
     parser.add_argument("--limit", type=int, default=3)
     parser.add_argument("--language", type=str, default="en")
+    parser.add_argument("--save", default=True, action=argparse.BooleanOptionalAction,
+                        help="Write side-by-side replies to eval_output.md (default: true)")
     args = parser.parse_args()
 
     client = anthropic.Anthropic()
     scores = []
+    output_sections = []
 
     print(f"Eval — {args.limit} email(s), language={args.language}\n")
     print("=" * 70)
 
-    for i, email in enumerate(email_stream(language=args.language, limit=args.limit, shuffle=True), 1):
+    for i, email in enumerate(email_stream(language=args.language, limit=args.limit), 1):
         ground_truth = email.get("answer") or ""
         if not ground_truth:
             print(f"[{i}] skipped — no ground truth answer\n")
@@ -95,6 +100,14 @@ def main():
             result = orchestrate(classification, email)
             generated = result.final_reply or ""
 
+            # Show skills and tools used across all sub-agents, flagging run_code
+            skills_str = ", ".join(sub.skill_used for sub in result.results)
+            all_tools = [c["tool"] for sub in result.results for c in sub.tool_calls]
+            tools_str = ", ".join(all_tools) if all_tools else "(none)"
+            run_code_used = "run_code" in all_tools
+            print(f"     skill: {skills_str}")
+            print(f"     tools: {tools_str}{' ← used run_code' if run_code_used else ''}")
+
             if not generated:
                 print("     [skipped — no reply generated]\n")
                 continue
@@ -105,6 +118,21 @@ def main():
             avg = (score["action"] + score["completeness"] + score["tone"]) / 3
             print(f"     action={score['action']}/5  completeness={score['completeness']}/5  tone={score['tone']}/5  avg={avg:.1f}")
             print(f"     comment: {score['comment']}")
+
+            if args.save:
+                output_sections.append({
+                    "index": i,
+                    "subject": subject,
+                    "queue": classification["queue"],
+                    "type": classification["type"],
+                    "priority": classification["priority"],
+                    "skills": skills_str,
+                    "tools": tools_str,
+                    "ground_truth": ground_truth,
+                    "generated": generated,
+                    "score": score,
+                    "avg": avg,
+                })
 
         except Exception as e:
             print(f"     [error: {e}]")
@@ -123,6 +151,42 @@ def main():
         print(f"  completeness: {avg_completeness:.1f}/5")
         print(f"  tone:         {avg_tone:.1f}/5")
         print(f"  overall:      {overall:.1f}/5")
+
+    if args.save and output_sections:
+        _write_output(output_sections)
+
+
+def _write_output(sections: list[dict], path: str = "eval_output.md") -> None:
+    lines = [
+        f"# Eval output — {datetime.now().strftime('%Y-%m-%d %H:%M')}",
+        f"*{len(sections)} email(s)*",
+        "",
+    ]
+    for s in sections:
+        score = s["score"]
+        avg = s["avg"]
+        lines += [
+            f"---",
+            f"## [{s['index']}] {s['subject']}",
+            f"**Queue:** {s['queue']} | **Type:** {s['type']} | **Priority:** {s['priority']}",
+            f"**Skills:** {s['skills']}",
+            f"**Tools:** {s['tools']}",
+            f"**Scores:** action={score['action']}/5  completeness={score['completeness']}/5  tone={score['tone']}/5  avg={avg:.1f}",
+            f"**Comment:** {score['comment']}",
+            "",
+            "### Ground truth",
+            "```",
+            s["ground_truth"],
+            "```",
+            "",
+            "### Generated",
+            "```",
+            s["generated"],
+            "```",
+            "",
+        ]
+    Path(path).write_text("\n".join(lines), encoding="utf-8")
+    print(f"\nSaved to {path}")
 
 
 if __name__ == "__main__":

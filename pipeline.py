@@ -24,7 +24,7 @@ def main():
     parser = argparse.ArgumentParser()
     parser.add_argument("--limit", type=int, default=2)
     parser.add_argument("--language", type=str, default="en")
-    parser.add_argument("--shuffle", action="store_true", default=True)
+    parser.add_argument("--shuffle", action="store_true", default=False)
     args = parser.parse_args()
 
     client = anthropic.Anthropic()
