@@ -33,7 +33,7 @@ Write a **plain-text customer-facing email reply**. This is what the customer re
 - **Body (2–3 short paragraphs):**
   - Acknowledge the specific issue they described and show empathy
   - State what is being done (team is investigating, escalated to specialist, etc.) and include the ticket ID for their reference (e.g. "We have logged this as ticket #TKT-XXXXXX")
-  - If you need more information to diagnose, ask one specific targeted question (e.g. error messages seen, browser/OS version, exact time issue started) — skip if you already have enough detail
+  - If key diagnostic details are missing, ask for all of them in a single flowing paragraph. Include everything diagnostically important: device and OS versions, error messages seen, approximate time the issue started, scope (single device/location or many), and any recent changes made. Do not limit yourself to one question — ask for everything you need in one go.
 - **Close:** "If you have any further questions, please let us know."
 
 **Format rules:**

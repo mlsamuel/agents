@@ -48,8 +48,8 @@ comment should be one short sentence about the biggest gap (or "none" if all goo
 def judge(client: anthropic.Anthropic, email: dict, ground_truth: str, generated: str) -> dict:
     subject = email.get("subject") or "(no subject)"
     body = (email.get("body") or "")[:800]
-    gt = ground_truth[:1200]
-    gen = generated[:1200]
+    gt = ground_truth[:2000]
+    gen = generated[:2000]
 
     msg = client.messages.create(
         model=MODEL,
