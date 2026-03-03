@@ -12,7 +12,7 @@ Tools available to workflow agents:
   run_code              - execute sandboxed Python with access to approved tool namespaces
 
 Run standalone (for testing):
-  conda run -n base python mcp_server.py
+  python run -n base python mcp_server.py
 """
 
 from logger import get_logger  # also silences third-party loggers on import
