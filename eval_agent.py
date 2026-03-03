@@ -46,9 +46,9 @@ comment should be one short sentence about the biggest gap (or "none" if all goo
 
 def judge(client: anthropic.Anthropic, email: dict, ground_truth: str, generated: str) -> dict:
     subject = email.get("subject") or "(no subject)"
-    body = (email.get("body") or "")[:600]
-    gt = ground_truth[:600]
-    gen = generated[:600]
+    body = (email.get("body") or "")[:800]
+    gt = ground_truth[:1200]
+    gen = generated[:1200]
 
     msg = client.messages.create(
         model=MODEL,
@@ -99,6 +99,7 @@ def main():
 
             result = orchestrate(classification, email)
             generated = result.final_reply or ""
+            internal_summary = result.results[0].internal_summary if result.results else ""
 
             # Show skills and tools used across all sub-agents, flagging run_code
             skills_str = ", ".join(sub.skill_used for sub in result.results)
@@ -123,6 +124,7 @@ def main():
                 output_sections.append({
                     "index": i,
                     "subject": subject,
+                    "body": email.get("body") or "",
                     "queue": classification["queue"],
                     "type": classification["type"],
                     "priority": classification["priority"],
@@ -130,6 +132,7 @@ def main():
                     "tools": tools_str,
                     "ground_truth": ground_truth,
                     "generated": generated,
+                    "internal_summary": internal_summary,
                     "score": score,
                     "avg": avg,
                 })
@@ -174,6 +177,13 @@ def _write_output(sections: list[dict], path: str = "eval_output.md") -> None:
             f"**Scores:** action={score['action']}/5  completeness={score['completeness']}/5  tone={score['tone']}/5  avg={avg:.1f}",
             f"**Comment:** {score['comment']}",
             "",
+            "### Email",
+            "```",
+            f"Subject: {s['subject']}",
+            "",
+            s["body"],
+            "```",
+            "",
             "### Ground truth",
             "```",
             s["ground_truth"],
@@ -184,6 +194,17 @@ def _write_output(sections: list[dict], path: str = "eval_output.md") -> None:
             s["generated"],
             "```",
             "",
+            *(
+                [
+                    "### Internal summary",
+                    "```",
+                    s["internal_summary"],
+                    "```",
+                    "",
+                ]
+                if s["internal_summary"]
+                else []
+            ),
         ]
     Path(path).write_text("\n".join(lines), encoding="utf-8")
     print(f"\nSaved to {path}")

@@ -40,7 +40,8 @@ MAX_TOOL_TURNS = 8
 class WorkflowResult:
     ticket_id: str
     action: str                      # resolved | escalated | replied | pending
-    reply_drafted: str
+    reply_drafted: str               # actual customer-facing reply (send_reply message)
+    internal_summary: str            # model's end_turn text block (reasoning/work log)
     escalated: bool
     skill_used: str
     tool_calls: list[dict] = field(default_factory=list)
@@ -172,6 +173,7 @@ async def _run_workflow(
             tool_calls_log = []
             ticket_id = ""
             reply_drafted = ""
+            internal_summary = ""
             escalated = False
 
             # Multi-turn tool_use loop
@@ -188,10 +190,15 @@ async def _run_workflow(
                 messages.append({"role": "assistant", "content": response.content})
 
                 if response.stop_reason == "end_turn":
-                    # Extract final text reply
                     for block in response.content:
                         if hasattr(block, "text"):
-                            reply_drafted = block.text
+                            if reply_drafted:
+                                # send_reply was already called — this text is the
+                                # model's internal work summary, keep it separately.
+                                internal_summary = block.text
+                            else:
+                                # No send_reply call yet — treat as the reply itself.
+                                reply_drafted = block.text
                     break
 
                 if response.stop_reason != "tool_use":
@@ -212,9 +219,11 @@ async def _run_workflow(
                     )
                     result_data = json.loads(result_text)
 
-                    # Track ticket IDs and escalations
+                    # Track ticket IDs, sent reply, and escalations
                     if "ticket_id" in result_data:
                         ticket_id = result_data["ticket_id"]
+                    if block.name == "send_reply":
+                        reply_drafted = tool_input.get("message", "")
                     if result_data.get("escalated"):
                         escalated = True
 
@@ -238,6 +247,7 @@ async def _run_workflow(
                 ticket_id=ticket_id,
                 action=action,
                 reply_drafted=reply_drafted,
+                internal_summary=internal_summary,
                 escalated=escalated,
                 skill_used=skill["name"],
                 tool_calls=tool_calls_log,
