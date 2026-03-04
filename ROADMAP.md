@@ -6,8 +6,7 @@
 
 | # | Shortcut | Current state | Risk |
 |---|----------|--------------|------|
-| S1 | **Injection detection is regex** | `email_sanitizer.py` strips keyword patterns as a pre-filter; `input_screener.py` (LLM-based, default on) is the primary defense. | Regex alone is bypassable, but LLM screener provides semantic detection. |
-| S2 | **LLM-based skill selection** | Haiku picks the skill from the email subject; fallback is `skills[0]`. | Adversarial subjects can influence routing. |
+| S1 | **LLM-based skill selection** | Haiku picks the skill from the email subject; fallback is `skills[0]`. | Adversarial subjects can influence routing. |
 
 ### Data persistence
 
