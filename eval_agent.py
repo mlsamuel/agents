@@ -22,6 +22,7 @@ from dotenv import load_dotenv
 from email_stream import email_stream
 from classifier_agent import classify
 from orchestrator_agent import orchestrate
+from input_screener import screen_email
 
 load_dotenv()
 
@@ -79,6 +80,8 @@ def main():
                         help="Write side-by-side replies to eval_output.md (default: true)")
     parser.add_argument("--internal-summary", default=False, action=argparse.BooleanOptionalAction,
                         help="Include ### Internal summary sections in eval_output.md (default: false)")
+    parser.add_argument("--screen", default=False, action=argparse.BooleanOptionalAction,
+                        help="Run input screener before each email (default: false)")
     args = parser.parse_args()
 
     client = anthropic.Anthropic()
@@ -96,6 +99,14 @@ def main():
 
         subject = email.get("subject") or "(no subject)"
         print(f"[{i}] {subject[:65]}")
+
+        if args.screen:
+            screen = screen_email(client, email)
+            if not screen.safe:
+                print(f"     [screener] QUARANTINED (score={screen.risk_score}/10) — {screen.reason}\n")
+                continue
+            if screen.risk_score >= 3:
+                print(f"     [screener] warning score={screen.risk_score}/10 — {screen.reason}")
 
         try:
             classification = classify(client, email)

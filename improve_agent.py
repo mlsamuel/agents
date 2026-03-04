@@ -59,19 +59,31 @@ You will receive:
    eval comments, ground truth replies, and the agent's generated replies
 3. The current knowledge base entries for this category
 
-Propose the minimum changes needed to close the observed gaps.
-For each proposal choose the most appropriate type:
-  skill_edit  — the workflow instructions or reply format need clarification/expansion
-  kb_entry    — the agent lacked specific factual information visible in the ground truth
-  new_skill   — a whole new workflow type is clearly needed (rare)
+## Decision rules — apply in order
 
-Rules:
+### kb_entry (ALWAYS do this when applicable)
+Propose a kb_entry whenever the ground truth reply contains specific factual information
+that the agent's reply was missing — e.g. policies, pricing, product details, procedures,
+deadlines, supported platforms, contact details. Extract the fact directly from the ground
+truth; do not invent or generalise. You MUST propose a kb_entry any time the generated
+reply omits concrete information that is present in the ground truth.
+
+### skill_edit (ONLY when the eval comment identifies a process issue)
+Propose a skill_edit ONLY when the eval comment explicitly describes a workflow or
+process problem — e.g. "agent escalated instead of asking a question first", "agent
+should have looked up ticket history before replying", "agent created a ticket when it
+should have asked for clarification". Do NOT propose a skill_edit just because the reply
+lacked information; that is a kb_entry problem, not a skill problem.
+
+### new_skill (rare)
+Propose a new_skill only when the email type is entirely unhandled by any existing skill.
+
+## Output rules
 - Only propose changes directly evidenced by the eval comments and ground truth
 - For skill_edit and new_skill: provide the COMPLETE .md file content (full rewrite).
   Preserve all existing security notes, frontmatter fields, and format rules.
-- For kb_entry: derive the answer text from the ground truth reply; do not invent facts.
+- For kb_entry: derive the answer text verbatim or near-verbatim from the ground truth.
   Assign IDs by incrementing from the highest existing ID in that category.
-- Be conservative — prefer a focused skill_edit over multiple proposals when it suffices.
 - Respond with valid JSON only, no markdown wrapper, matching this exact schema:
 {
   "proposals": [

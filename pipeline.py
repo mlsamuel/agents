@@ -25,6 +25,8 @@ def main():
     parser.add_argument("--limit", type=int, default=2)
     parser.add_argument("--language", type=str, default="en")
     parser.add_argument("--shuffle", action="store_true", default=False)
+    parser.add_argument("--screen", default=False, action=argparse.BooleanOptionalAction,
+                        help="Run input screener (Haiku injection detector). Default: off.")
     args = parser.parse_args()
 
     client = anthropic.Anthropic()
@@ -38,13 +40,14 @@ def main():
         print("-" * 70)
 
         # Step 1: Screen for injection (on raw email, before any sanitization)
-        screen = screen_email(client, email)
-        if not screen.safe:
-            print(f"  [screener]    QUARANTINED (score={screen.risk_score}/10) — {screen.reason}")
-            print("=" * 70)
-            continue
-        if screen.risk_score >= 3:
-            print(f"  [screener]    warning score={screen.risk_score}/10 — {screen.reason}")
+        if args.screen:
+            screen = screen_email(client, email)
+            if not screen.safe:
+                print(f"  [screener]    QUARANTINED (score={screen.risk_score}/10) — {screen.reason}")
+                print("=" * 70)
+                continue
+            if screen.risk_score >= 3:
+                print(f"  [screener]    warning score={screen.risk_score}/10 — {screen.reason}")
 
         # Step 2: Sanitize (pattern strip)
         email, warnings = sanitize(email)
