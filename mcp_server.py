@@ -355,6 +355,8 @@ def run_code(code: str, allowed_tools: list[str], timeout: int = 10) -> dict:
     """
     timeout = max(1, min(timeout, 30))
 
+    log.debug("run_code called — allowed_tools=%s\n--- code ---\n%s\n--- end ---", allowed_tools, code)
+
     rejection = _ast_check(code)
     if rejection:
         return {"stdout": "", "error": rejection, "exit_code": -1}
@@ -388,11 +390,10 @@ def run_code(code: str, allowed_tools: list[str], timeout: int = 10) -> dict:
         signal.signal(signal.SIGALRM, old_handler)
         sys.stdout = old_stdout
 
-    return {
-        "stdout": captured.getvalue()[:8192],
-        "error": error,
-        "exit_code": exit_code,
-    }
+    result = {"stdout": captured.getvalue()[:8192], "error": error, "exit_code": exit_code}
+    log.debug("run_code result — exit_code=%d  error=%s\n--- stdout ---\n%s\n--- end ---",
+              exit_code, error, result["stdout"])
+    return result
 
 
 if __name__ == "__main__":

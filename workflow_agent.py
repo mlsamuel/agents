@@ -192,6 +192,18 @@ async def _run_workflow(
                 # Collect assistant turn
                 messages.append({"role": "assistant", "content": response.content})
 
+                # Log agent's text interpretation after a run_code call
+                # messages[-3] is the previous assistant turn (tool_use blocks)
+                prev_assistant = messages[-3]["content"] if len(messages) >= 3 else []
+                prev_had_run_code = isinstance(prev_assistant, list) and any(
+                    getattr(b, "type", None) == "tool_use" and getattr(b, "name", None) == "run_code"
+                    for b in prev_assistant
+                )
+                if prev_had_run_code:
+                    for block in response.content:
+                        if hasattr(block, "text") and block.text:
+                            log.debug("agent interpretation after run_code:\n%s", block.text)
+
                 if response.stop_reason == "end_turn":
                     for block in response.content:
                         if hasattr(block, "text"):
@@ -214,6 +226,10 @@ async def _run_workflow(
                         continue
 
                     tool_input = block.input
+                    if block.name == "run_code":
+                        log.debug("run_code input — allowed_tools=%s\n--- code ---\n%s\n--- end ---",
+                                  tool_input.get("allowed_tools"), tool_input.get("code", ""))
+
                     mcp_result = await session.call_tool(block.name, tool_input)
                     result_text = (
                         mcp_result.content[0].text
@@ -225,6 +241,11 @@ async def _run_workflow(
                     except json.JSONDecodeError:
                         log.error("Tool '%s' returned non-JSON: %s", block.name, result_text[:200])
                         result_data = {"error": result_text}
+
+                    if block.name == "run_code":
+                        log.debug("run_code result — exit_code=%s  error=%s\n--- stdout ---\n%s\n--- end ---",
+                                  result_data.get("exit_code"), result_data.get("error"),
+                                  result_data.get("stdout", ""))
 
                     # Track ticket IDs, sent reply, and escalations
                     if "ticket_id" in result_data:
