@@ -20,12 +20,17 @@ from logger import get_logger  # also silences third-party loggers on import
 log = get_logger(__name__)
 
 import ast
+import base64
 import io
 import json
 import random
+import shutil
 import signal
 import string
+import subprocess
 import sys
+import threading
+import uuid
 from datetime import datetime, timedelta
 from pathlib import Path
 from mcp.server.fastmcp import FastMCP
@@ -246,6 +251,10 @@ def search_knowledge_base(query: str, category: str = "", top_k: int = 3) -> lis
 
 # ── sandboxed code execution ────────────────────────────────────────────────────
 
+_SANDBOX_RUNNER = Path(__file__).parent / "sandbox_runner.py"
+_DOCKER_IMAGE = "python:3.12-slim"
+_DOCKER_AVAILABLE = shutil.which("docker") is not None
+
 _BLOCKED_MODULES = frozenset({
     "os", "sys", "subprocess", "multiprocessing", "threading", "concurrent",
     "signal", "ctypes", "socket", "ssl", "http", "urllib", "requests", "httpx",
@@ -341,7 +350,8 @@ def run_code(code: str, allowed_tools: list[str], timeout: int = 10) -> dict:
       comms   - comms.send_reply(ticket_id, message), comms.escalate_to_human(ticket_id, reason)
       kb      - kb.search_knowledge_base(query, category, top_k)
 
-    The code runs with restricted builtins — no imports, no filesystem, no network.
+    The code runs in a Docker container (--network none, read-only rootfs, memory/cpu limits).
+    Tool calls are serialized over stdio; results are injected back by the host.
     Use print() to produce output; the captured stdout is returned.
 
     Example:
@@ -354,20 +364,113 @@ def run_code(code: str, allowed_tools: list[str], timeout: int = 10) -> dict:
       allowed_tools = ["crm"]
     """
     timeout = max(1, min(timeout, 30))
-
     log.debug("run_code called — allowed_tools=%s\n--- code ---\n%s\n--- end ---", allowed_tools, code)
 
+    if _DOCKER_AVAILABLE and _SANDBOX_RUNNER.exists():
+        return _run_code_docker(code, allowed_tools, timeout)
+
+    log.warning("Docker unavailable — falling back to in-process exec sandbox")
+    return _run_code_exec(code, allowed_tools, timeout)
+
+
+def _run_code_docker(code: str, allowed_tools: list[str], timeout: int) -> dict:
+    """Run code in an isolated Docker container using the stdio tool-call protocol."""
+    code_b64 = base64.b64encode(code.encode()).decode()
+    name = f"sandbox-{uuid.uuid4().hex[:8]}"
+
+    cmd = [
+        "docker", "run", "--rm",
+        "--name", name,
+        "--network", "none",
+        "--memory", "128m",
+        "--cpus", "0.5",
+        "--read-only",
+        "--tmpfs", "/tmp:size=32m,noexec",
+        "-e", f"SANDBOX_CODE={code_b64}",
+        "-e", f"ALLOWED_TOOLS={json.dumps(allowed_tools)}",
+        "-e", "PYTHONDONTWRITEBYTECODE=1",
+        "-e", "PYTHONUNBUFFERED=1",
+        "-v", f"{_SANDBOX_RUNNER.resolve()}:/runner.py:ro",
+        _DOCKER_IMAGE,
+        "python", "/runner.py",
+    ]
+
+    try:
+        proc = subprocess.Popen(
+            cmd,
+            stdin=subprocess.PIPE,
+            stdout=subprocess.PIPE,
+            stderr=subprocess.PIPE,
+        )
+    except FileNotFoundError:
+        return {"stdout": "", "error": "docker executable not found", "exit_code": -1}
+
+    output_parts: list[str] = []
+    timed_out = False
+
+    def _kill_container():
+        nonlocal timed_out
+        timed_out = True
+        subprocess.run(["docker", "kill", name], capture_output=True)
+
+    timer = threading.Timer(timeout, _kill_container)
+    timer.start()
+
+    try:
+        for raw_line in proc.stdout:
+            line = raw_line.decode(errors="replace")
+            if line.startswith("__CALL__:"):
+                try:
+                    call = json.loads(line[9:])
+                    ns, fn, kwargs = call["ns"], call["fn"], call["kwargs"]
+                    if ns in _TOOL_REGISTRY and fn in _TOOL_REGISTRY[ns]:
+                        result = _TOOL_REGISTRY[ns][fn](**kwargs)
+                    else:
+                        result = {"__error__": f"Tool {ns}.{fn} not in allowed_tools"}
+                except Exception as exc:
+                    result = {"__error__": str(exc)}
+                proc.stdin.write(f"__RESULT__:{json.dumps(result)}\n".encode())
+                proc.stdin.flush()
+            else:
+                output_parts.append(line)
+    except BrokenPipeError:
+        pass  # container killed by timeout
+    finally:
+        timer.cancel()
+        try:
+            proc.stdin.close()
+        except Exception:
+            pass
+
+    proc.wait()
+    exit_code = proc.returncode
+    stderr_text = proc.stderr.read().decode(errors="replace").strip()
+
+    if timed_out:
+        error: str | None = f"Code execution timed out after {timeout}s"
+        exit_code = -1
+    elif exit_code != 0:
+        error = stderr_text or f"Process exited with code {exit_code}"
+    else:
+        error = None
+
+    stdout = "".join(output_parts)[:8192]
+    log.debug("run_code result — exit_code=%d  error=%s\n--- stdout ---\n%s\n--- end ---",
+              exit_code, error, stdout)
+    return {"stdout": stdout, "error": error, "exit_code": exit_code}
+
+
+def _run_code_exec(code: str, allowed_tools: list[str], timeout: int) -> dict:
+    """In-process exec fallback used when Docker is unavailable."""
     rejection = _ast_check(code)
     if rejection:
         return {"stdout": "", "error": rejection, "exit_code": -1}
 
-    # Build safe globals: restricted builtins + requested tool namespaces
     safe_globals = {"__builtins__": _SAFE_BUILTINS}
     for ns_name in allowed_tools:
         if ns_name in _TOOL_REGISTRY:
             safe_globals[ns_name] = _make_namespace(_TOOL_REGISTRY[ns_name])
 
-    # Capture stdout and enforce wall-clock timeout via SIGALRM
     captured = io.StringIO()
     old_stdout = sys.stdout
     sys.stdout = captured
