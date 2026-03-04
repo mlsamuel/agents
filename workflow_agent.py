@@ -18,11 +18,11 @@ import re
 from dataclasses import dataclass, field
 from pathlib import Path
 
-import anthropic
 from dotenv import load_dotenv
 from mcp import ClientSession
 from mcp.client.stdio import stdio_client, StdioServerParameters
 
+from client import Client
 from logger import get_logger
 log = get_logger(__name__)
 
@@ -87,7 +87,7 @@ def load_skills(agent_key: str) -> list[dict]:
 # ── Skill selector ─────────────────────────────────────────────────────────────
 
 def select_skill(
-    client: anthropic.Anthropic,
+    client: Client,
     skills: list[dict],
     email: dict,
     classification: dict,
@@ -137,7 +137,7 @@ def _mcp_to_anthropic_tool(mcp_tool) -> dict:
 # ── Workflow runner ────────────────────────────────────────────────────────────
 
 async def _run_workflow(
-    client: anthropic.Anthropic,
+    client: Client,
     skill: dict,
     email: dict,
     classification: dict,
@@ -288,7 +288,7 @@ class WorkflowAgent:
     def __init__(self, agent_key: str):
         self.agent_key = agent_key
         self.skills = load_skills(agent_key)
-        self._client = anthropic.Anthropic()
+        self._client = Client()
 
     def run(self, email: dict, classification: dict) -> WorkflowResult:
         skill = select_skill(self._client, self.skills, email, classification)

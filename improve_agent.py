@@ -23,9 +23,8 @@ import json
 from collections import defaultdict
 from pathlib import Path
 
-import anthropic
 from dotenv import load_dotenv
-
+from client import Client
 from email_stream import email_stream
 from classifier_agent import classify
 from orchestrator_agent import orchestrate
@@ -178,7 +177,7 @@ def _build_examples_text(records: list[dict]) -> str:
 
 
 def _generate_proposals(
-    client: anthropic.Anthropic,
+    client: Client,
     skill_name: str,
     skill_info: dict | None,
     records: list[dict],
@@ -279,7 +278,7 @@ def _apply_proposals(all_proposals: list[dict]) -> None:
 
 # ── Re-evaluate ──────────────────────────────────────────────────────────────
 
-def _reeval(client: anthropic.Anthropic, failing: list[dict]) -> list[dict]:
+def _reeval(client: Client, failing: list[dict]) -> list[dict]:
     """Re-run orchestrate + judge for the same emails. Returns full output sections."""
     target_indices = {r["index"] for r in failing}
     updated = []
@@ -359,7 +358,7 @@ def main():
                         help="Apply proposals to disk and re-run eval to measure delta")
     args = parser.parse_args()
 
-    client = anthropic.Anthropic()
+    client = Client()
 
     # Step 1: Load & filter
     print(f"Loading {args.eval} …")

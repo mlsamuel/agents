@@ -8,8 +8,8 @@ Usage:
 """
 
 import argparse
-import anthropic
 from dotenv import load_dotenv
+from client import Client
 
 from email_stream import email_stream
 from classifier_agent import classify
@@ -29,7 +29,7 @@ def main():
                         help="Run input screener (Haiku injection detector). Default: off.")
     args = parser.parse_args()
 
-    client = anthropic.Anthropic()
+    client = Client()
 
     print(f"Pipeline starting — {args.limit} email(s), language={args.language}\n")
     print("=" * 70)

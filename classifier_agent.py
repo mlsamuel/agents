@@ -8,9 +8,9 @@ Usage:
 
 import json
 import argparse
-import anthropic
 from dotenv import load_dotenv
 from email_stream import email_stream
+from client import Client
 
 load_dotenv()
 
@@ -60,7 +60,7 @@ If the email has no subject line, rely entirely on the body for classification.
 Respond with only valid JSON, no markdown fences."""
 
 
-def classify(client: anthropic.Anthropic, email: dict) -> dict:
+def classify(client: Client, email: dict) -> dict:
     subject = email.get("subject") or "(no subject)"
     body = (email.get("body") or "")[:1500]  # trim very long bodies
 
@@ -97,7 +97,7 @@ def main():
     parser.add_argument("--shuffle", action="store_true", default=False)
     args = parser.parse_args()
 
-    client = anthropic.Anthropic()  # reads ANTHROPIC_API_KEY from env
+    client = Client()
 
     print(f"Classifying {args.limit} emails (language={args.language})...\n")
 

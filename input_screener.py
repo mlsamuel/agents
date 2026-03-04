@@ -16,7 +16,7 @@ Usage:
 import json
 from dataclasses import dataclass
 
-import anthropic
+from client import Client
 
 SCREENER_MODEL = "claude-haiku-4-5-20251001"
 
@@ -53,7 +53,7 @@ class ScreenResult:
     reason: str
 
 
-def screen_email(client: anthropic.Anthropic, email: dict) -> ScreenResult:
+def screen_email(client: Client, email: dict) -> ScreenResult:
     """
     Screen an email for prompt injection. Call this on the raw email,
     before sanitize(), to catch attempts that pattern stripping might alter.

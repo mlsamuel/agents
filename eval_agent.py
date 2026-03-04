@@ -16,9 +16,8 @@ import argparse
 import json
 from datetime import datetime
 from pathlib import Path
-import anthropic
 from dotenv import load_dotenv
-
+from client import Client
 from email_stream import email_stream
 from classifier_agent import classify
 from orchestrator_agent import orchestrate
@@ -46,7 +45,7 @@ Return only valid JSON with keys: action, completeness, tone, comment
 comment should be one short sentence about the biggest gap (or "none" if all good)."""
 
 
-def judge(client: anthropic.Anthropic, email: dict, ground_truth: str, generated: str) -> dict:
+def judge(client: Client, email: dict, ground_truth: str, generated: str) -> dict:
     subject = email.get("subject") or "(no subject)"
     body = (email.get("body") or "")[:800]
     gt = ground_truth[:600]
@@ -84,7 +83,7 @@ def main():
                         help="Run input screener before each email (default: false)")
     args = parser.parse_args()
 
-    client = anthropic.Anthropic()
+    client = Client()
     scores = []
     output_sections = []
 

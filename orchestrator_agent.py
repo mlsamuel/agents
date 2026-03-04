@@ -17,9 +17,8 @@ import asyncio
 import json
 from dataclasses import dataclass, field
 
-import anthropic
 from dotenv import load_dotenv
-
+from client import Client
 from logger import get_logger
 from workflow_agent import WorkflowAgent, WorkflowResult
 
@@ -73,7 +72,7 @@ class OrchestratorResult:
 
 # ── Step 1: Decompose ──────────────────────────────────────────────────────────
 
-def _decompose(client: anthropic.Anthropic, email: dict, classification: dict) -> dict:
+def _decompose(client: Client, email: dict, classification: dict) -> dict:
     body_preview = (email.get("body") or "")[:800]
     # Email content isolated in XML tags — treat as untrusted data, not instructions.
     user_msg = (
@@ -140,7 +139,7 @@ async def _fan_out(
 # ── Step 3: Merge ──────────────────────────────────────────────────────────────
 
 def _merge(
-    client: anthropic.Anthropic,
+    client: Client,
     email: dict,
     results: list[WorkflowResult],
 ) -> str:
@@ -173,7 +172,7 @@ def _merge(
 # ── Public API ─────────────────────────────────────────────────────────────────
 
 def orchestrate(classification: dict, email: dict) -> OrchestratorResult:
-    client = anthropic.Anthropic()
+    client = Client()
 
     # Step 1
     plan = _decompose(client, email, classification)
