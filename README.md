@@ -114,7 +114,7 @@ agents/
 ├── mcp_server.py             # FastMCP server — all support backend tools
 ├── email_stream.py           # reads data/emails.csv
 ├── email_sanitizer.py        # pattern-based injection strip
-├── input_screener.py         # LLM-based injection detector (optional)
+├── input_screener.py         # LLM-based injection detector
 ├── eval_agent.py             # LLM-as-judge evaluation
 ├── improve_agent.py          # eval-driven skill/KB improvement
 ├── logger.py                 # shared logging config
