@@ -1,6 +1,5 @@
 .env
 .vscode/
-data/
 __pycache__/
 *.pyc
 eval_output.md
