@@ -69,18 +69,39 @@ python pipeline.py --limit 3
 | `eval_agent.py` | Run eval and score replies against ground truth | `--limit N`, `--offset N`, `--screen`, `--save` |
 | `improve_agent.py` | Propose and apply skill/KB improvements from eval results | `--min-score 4.0`, `--apply` |
 
-### Eval loop
+### Eval + improve loop
 
 ```bash
-# 1. Run eval — writes eval_results.json + eval_output.md
-python eval_agent.py --limit 10 --save
+# 1. Run eval — scores replies against ground truth, writes eval_results.json + eval_output.md
+python eval_agent.py --limit 20 --save
 
-# 2. Inspect proposals (dry run)
+# 2. Inspect proposals without changing anything (dry run)
 python improve_agent.py --min-score 4.0
 
-# 3. Apply improvements + re-evaluate
+# 3. Apply improvements + re-evaluate the same emails to measure the delta
 python improve_agent.py --min-score 4.0 --apply
 ```
+
+### How the improve agent works
+
+`improve_agent.py` reads `eval_results.json`, filters to emails where the average score is below `--min-score`, groups them by skill, then calls Claude Sonnet once per skill group to propose targeted improvements.
+
+**Proposal types**
+
+| Type | When | What it changes |
+|------|------|----------------|
+| `kb_entry` | Ground truth contains specific facts the agent's reply was missing (policies, pricing, procedures, deadlines) | Appends a new entry to `data/knowledge_base.json` |
+| `skill_edit` | Eval comment describes a *workflow* problem (wrong action taken, wrong tool used, wrong order of steps) | Rewrites the skill `.md` file in place |
+| `new_skill` | Email type is entirely unhandled by any existing skill | Creates a new `.md` file under `skills/<queue>/` |
+
+The distinction matters: a missing fact is a knowledge base problem, not a skill problem. `skill_edit` is only proposed when the eval comment explicitly identifies a process or workflow gap.
+
+**Decision rules applied by the LLM**
+1. `kb_entry` — always proposed when ground truth has concrete info the agent omitted
+2. `skill_edit` — only when the comment says the agent took the wrong action or followed the wrong process
+3. `new_skill` — rare; only when no existing skill covers the email type at all
+
+**With `--apply`**, proposals are written to disk and the same emails are re-evaluated. A before/after score table is printed and `eval_results.json` / `eval_output.md` are updated with the new scores.
 
 ## Project structure
 
