@@ -64,9 +64,9 @@ python pipeline.py --limit 3
 
 | Script | Purpose | Key flags |
 |--------|---------|-----------|
-| `pipeline.py` | End-to-end: stream → classify → route → reply | `--limit N`, `--language en\|de`, `--screen` |
+| `pipeline.py` | End-to-end: stream → classify → route → reply | `--limit N`, `--language en\|de`, `--no-screen` |
 | `classifier_agent.py` | Classify emails only | `--limit N` |
-| `eval_agent.py` | Run eval and score replies against ground truth | `--limit N`, `--offset N`, `--screen`, `--save` |
+| `eval_agent.py` | Run eval and score replies against ground truth | `--limit N`, `--offset N`, `--no-screen`, `--save` |
 | `improve_agent.py` | Propose and apply skill/KB improvements from eval results | `--min-score 4.0`, `--apply` |
 
 ### Eval + improve loop

@@ -49,11 +49,6 @@
 - MCP server passes code + namespace bindings via stdin; captures stdout; timeout via `--stop-timeout`
 - Files: `mcp_server.py`
 
-**1b. Make `input_screener` the primary injection defense** — *mitigates S2*
-- Change `--screen` default to `True` in `pipeline.py` and `eval_agent.py`
-- Keep regex sanitizer as a cheap pre-filter only, not the security boundary
-- Files: `pipeline.py`, `eval_agent.py`
-
 ---
 
 ### Phase 2 — Data persistence

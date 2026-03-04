@@ -25,8 +25,8 @@ def main():
     parser.add_argument("--limit", type=int, default=2)
     parser.add_argument("--language", type=str, default="en")
     parser.add_argument("--shuffle", action="store_true", default=False)
-    parser.add_argument("--screen", default=False, action=argparse.BooleanOptionalAction,
-                        help="Run input screener (Haiku injection detector). Default: off.")
+    parser.add_argument("--screen", default=True, action=argparse.BooleanOptionalAction,
+                        help="Run input screener (Haiku injection detector). Default: on.")
     args = parser.parse_args()
 
     client = Client()

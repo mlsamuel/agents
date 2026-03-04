@@ -79,8 +79,8 @@ def main():
                         help="Write side-by-side replies to eval_output.md (default: true)")
     parser.add_argument("--internal-summary", default=False, action=argparse.BooleanOptionalAction,
                         help="Include ### Internal summary sections in eval_output.md (default: false)")
-    parser.add_argument("--screen", default=False, action=argparse.BooleanOptionalAction,
-                        help="Run input screener before each email (default: false)")
+    parser.add_argument("--screen", default=True, action=argparse.BooleanOptionalAction,
+                        help="Run input screener before each email (default: true)")
     args = parser.parse_args()
 
     client = Client()
