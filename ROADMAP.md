@@ -2,12 +2,6 @@
 
 ## Shortcuts taken
 
-### Security
-
-| # | Shortcut | Current state | Risk |
-|---|----------|--------------|------|
-| S1 | **LLM-based skill selection** | Haiku picks the skill from the email subject; fallback is `skills[0]`. | Adversarial subjects can influence routing. |
-
 ### Data persistence
 
 | # | Shortcut | Current state | Consequence |
