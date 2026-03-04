@@ -6,8 +6,8 @@
 
 | # | Shortcut | Current state | Risk |
 |---|----------|--------------|------|
-| S2 | **Injection detection is regex** | `email_sanitizer.py` strips keyword patterns as a pre-filter; `input_screener.py` (LLM-based, default on) is the primary defense. | Regex alone is bypassable, but LLM screener provides semantic detection. |
-| S3 | **LLM-based skill selection** | Haiku picks the skill from the email subject; fallback is `skills[0]`. | Adversarial subjects can influence routing. |
+| S1 | **Injection detection is regex** | `email_sanitizer.py` strips keyword patterns as a pre-filter; `input_screener.py` (LLM-based, default on) is the primary defense. | Regex alone is bypassable, but LLM screener provides semantic detection. |
+| S2 | **LLM-based skill selection** | Haiku picks the skill from the email subject; fallback is `skills[0]`. | Adversarial subjects can influence routing. |
 
 ### Data persistence
 
@@ -40,15 +40,15 @@
 
 ## Prioritized upgrade plan
 
-### Phase 2 — Data persistence
+### Phase 1 — Data persistence
 
-**2a. Postgres for customers, tickets, orders** — *fixes D1*
+**1a. Postgres for customers, tickets, orders** — *fixes D1*
 - Schema: `customers`, `tickets`, `ticket_events`, `orders`, `refunds`
 - Replace mocked tools with real `asyncpg` queries — MCP tool API surface unchanged
 - New file: `db.py` (connection pool, schema bootstrap, query helpers)
 - Updated file: `mcp_server.py`
 
-**2b. Postgres + pgvector + VoyageAI for the knowledge base** — *fixes D3, D4*
+**1b. Postgres + pgvector + VoyageAI for the knowledge base** — *fixes D3, D4*
 - Move `data/knowledge_base.json` → `knowledge_base` Postgres table with a `pgvector` embedding column
 - Replace `SentenceTransformer` with **VoyageAI** (`voyage-3-lite` / `voyage-3`)
   - Embeddings computed at insert time via VoyageAI API; stored in pgvector
@@ -58,7 +58,7 @@
 - New file: `embeddings.py` (VoyageAI client wrapper)
 - Updated files: `mcp_server.py`, `improve_agent.py`
 
-**2c. Postgres for skills** — *fixes D2*
+**1c. Postgres for skills** — *fixes D2*
 - Table: `skills(id, name, queue, types[], tools[], system_prompt, version, active, created_at)`
 - `load_skills()` in `workflow_agent.py` → DB query filtered to `active = true`
 - `improve_agent` skill proposals: INSERT new version row, deactivate old → full history, instant rollback
@@ -67,15 +67,15 @@
 
 ---
 
-### Phase 3 — Improve agent completeness
+### Phase 2 — Improve agent completeness
 
-**3a. Regression testing** — *fixes I2*
+**2a. Regression testing** — *fixes I2*
 - After `--apply`, re-eval **all** emails for the affected skill(s), not just the failing ones
 - If any previously-passing email drops > 0.5 avg points: warn and require `--force`
 - Flag: `--regression` (default on when `--apply` is used)
 - Updated file: `improve_agent.py`
 
-**3b. `new_tool` proposal type** — *fixes I1*
+**2b. `new_tool` proposal type** — *fixes I1*
 - Add a tool registry to `mcp_server.py` (tool names, signatures, descriptions)
 - Include tool registry in the improve_agent prompt context
 - Detection rule in `IMPROVE_SYSTEM`: if eval comment says agent couldn't do X and no tool covers X → propose `new_tool`
@@ -83,13 +83,13 @@
 - `--apply`: writes a stub to `mcp_server.py` with `raise NotImplementedError`; human completes it
 - Updated files: `improve_agent.py`, `mcp_server.py`
 
-**3c. Git-integrated proposals** — *fixes I3*
+**2c. Git-integrated proposals** — *fixes I3*
 - `_apply_proposals()` creates a branch `improve/<timestamp>`, applies changes, commits with link to eval run
 - Dry-run prints a diff and requires confirmation before committing
 - `--no-branch`: apply directly to working tree (opt-in, current behaviour)
 - Updated file: `improve_agent.py`
 
-**3d. Experiment log** — *fixes I4*
+**2d. Experiment log** — *fixes I4*
 - `improvement_log.jsonl` (gitignored): one JSON line per run — `{ timestamp, run_id, skill_versions, before_avg, after_avg, delta, emails_n }`
 - `eval_agent.py` appends a baseline entry on every `--save` run
 - `improve_agent.py` reads last baseline and prints cumulative improvement trend
@@ -97,21 +97,21 @@
 
 ---
 
-### Phase 4 — Architecture cleanup
+### Phase 3 — Architecture cleanup
 
-**4a. Long-lived MCP server** — *fixes A1*
+**3a. Long-lived MCP server** — *fixes A1*
 - Move MCP transport from stdio subprocess → HTTP (SSE or streamable-HTTP)
 - MCP server runs as a persistent service; `workflow_agent.py` connects as a client
 - Eliminates per-request subprocess spawn, KB reload, embedding model init
 - Updated files: `mcp_server.py`, `workflow_agent.py`
 
-**4b. Cost tracking** — *fixes A4*
+**3b. Cost tracking** — *fixes A4*
 - Instrument `Client._Messages.create()` to extract `usage.input_tokens + output_tokens`
 - Compute cost using a model pricing table in `client.py`
 - Print per-run cost summary at end of pipeline/eval/improve runs
 - Updated file: `client.py`
 
-**4c. Structured logging**
+**3c. Structured logging**
 - `LOG_LEVEL` env var replaces hardcoded DEBUG (default `INFO`)
 - `RotatingFileHandler` (`agents.log`, 10 MB, 3 backups)
 - Updated file: `logger.py`
@@ -121,15 +121,15 @@
 ## Sequencing
 
 ```
-Month 1   Phase 2a  Postgres for backend data (customers, tickets, orders)
-Month 2   Phase 2b  VoyageAI + pgvector for knowledge base
-          Phase 2c  Skills in Postgres
+Month 1   Phase 1a  Postgres for backend data (customers, tickets, orders)
+Month 2   Phase 1b  VoyageAI + pgvector for knowledge base
+          Phase 1c  Skills in Postgres
 
-Month 3   Phase 3   Improve agent: regression testing, new_tool proposals,
+Month 3   Phase 2   Improve agent: regression testing, new_tool proposals,
                     git integration, experiment log
 
-Month 4   Phase 4a  Long-lived MCP server (HTTP transport)
-Ongoing   Phase 4bc Cost tracking, structured logging
+Month 4   Phase 3a  Long-lived MCP server (HTTP transport)
+Ongoing   Phase 3bc Cost tracking, structured logging
 ```
 
 ---
