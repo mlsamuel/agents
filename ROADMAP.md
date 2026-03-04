@@ -7,7 +7,7 @@
 | # | Shortcut | Current state | Risk |
 |---|----------|--------------|------|
 | S1 | **Code sandbox is AST-only** | `run_code` uses AST checks + restricted builtins + SIGALRM (Unix-only). No OS-level isolation. | Crafted snippets can escape. Fails on Windows. |
-| S2 | **Injection detection is regex** | `email_sanitizer.py` strips keyword patterns. Bypassed trivially with unicode spacing, obfuscation, or semantic rewording. | Determined attackers will succeed. |
+| S2 | **Injection detection is regex** | `email_sanitizer.py` strips keyword patterns as a pre-filter; `input_screener.py` (LLM-based, default on) is the primary defense. | Regex alone is bypassable, but LLM screener provides semantic detection. |
 | S3 | **LLM-based skill selection** | Haiku picks the skill from the email subject; fallback is `skills[0]`. | Adversarial subjects can influence routing. |
 
 ### Data persistence
