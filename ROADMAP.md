@@ -6,7 +6,6 @@
 
 | # | Shortcut | Current state | Risk |
 |---|----------|--------------|------|
-| S1 | **Code sandbox is AST-only** | `run_code` uses AST checks + restricted builtins + SIGALRM (Unix-only). No OS-level isolation. | Crafted snippets can escape. Fails on Windows. |
 | S2 | **Injection detection is regex** | `email_sanitizer.py` strips keyword patterns as a pre-filter; `input_screener.py` (LLM-based, default on) is the primary defense. | Regex alone is bypassable, but LLM screener provides semantic detection. |
 | S3 | **LLM-based skill selection** | Haiku picks the skill from the email subject; fallback is `skills[0]`. | Adversarial subjects can influence routing. |
 
@@ -40,16 +39,6 @@
 ---
 
 ## Prioritized upgrade plan
-
-### Phase 1 — Security *(blocks production use)*
-
-**1a. Docker sandbox for `run_code`** — *fixes S1*
-- Replace SIGALRM + AST approach with a Docker container per `run_code` invocation
-- `python:3.12-slim`, `--network none`, read-only rootfs, `--memory 128m`, `--cpus 0.5`
-- MCP server passes code + namespace bindings via stdin; captures stdout; timeout via `--stop-timeout`
-- Files: `mcp_server.py`
-
----
 
 ### Phase 2 — Data persistence
 
@@ -132,9 +121,7 @@
 ## Sequencing
 
 ```
-Month 1   Phase 1   Docker sandbox, screener default-on
-          Phase 2a  Postgres for backend data (customers, tickets, orders)
-
+Month 1   Phase 2a  Postgres for backend data (customers, tickets, orders)
 Month 2   Phase 2b  VoyageAI + pgvector for knowledge base
           Phase 2c  Skills in Postgres
 
@@ -151,7 +138,7 @@ Ongoing   Phase 4bc Cost tracking, structured logging
 
 | File | What changes |
 |------|-------------|
-| `mcp_server.py` | Docker exec for `run_code`; Postgres queries; tool registry; VoyageAI + pgvector KB |
+| `mcp_server.py` | Postgres queries; tool registry; VoyageAI + pgvector KB |
 | `workflow_agent.py` | `load_skills()` → DB; HTTP MCP client |
 | `improve_agent.py` | `new_tool` proposals; regression gate; git branch workflow; experiment log |
 | `eval_agent.py` | Experiment log baseline; cost tracking |
