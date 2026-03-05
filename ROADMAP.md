@@ -135,7 +135,6 @@ Ongoing   Phase 3bc Cost tracking, structured logging
 | `improve_agent.py` | `new_tool` proposals; regression gate; git branch workflow; experiment log |
 | `eval_agent.py` | Experiment log baseline; cost tracking |
 | `client.py` | Cost tracking |
-| `logger.py` | `LOG_LEVEL` env var; `RotatingFileHandler` |
-| `pipeline.py` | `--screen` default → `True` |
+| `logger.py` | `RotatingFileHandler` |
 | NEW `db.py` | asyncpg pool, schema, query helpers |
 | NEW `embeddings.py` | VoyageAI client wrapper |
