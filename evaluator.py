@@ -56,6 +56,57 @@ def judge(client: Client, email: dict, ground_truth: str, generated: str) -> dic
     return json.loads(raw)
 
 
+def _section_lines(s: dict, include_internal_summary: bool) -> list[str]:
+    score = s["score"]
+    avg = s["avg"]
+    lines = [
+        "---",
+        f"## [{s['index']}] {s['subject']}",
+        f"**Queue:** {s['queue']} | **Type:** {s['type']} | **Priority:** {s['priority']}",
+        f"**Skills:** {s['skills']}",
+        f"**Tools:** {s['tools']}",
+        f"**Scores:** action={score['action']}/5  completeness={score['completeness']}/5  tone={score['tone']}/5  avg={avg:.1f}",
+        f"**Comment:** {score['comment']}",
+        "",
+        "### Email",
+        "```",
+        f"Subject: {s['subject']}",
+        "",
+        s["body"],
+        "```",
+        "",
+        "### Ground truth",
+        "```",
+        s["ground_truth"],
+        "```",
+        "",
+        "### Generated",
+        "```",
+        s["generated"],
+        "```",
+        "",
+    ]
+    if include_internal_summary and s.get("internal_summary"):
+        lines += ["### Internal summary", "```", s["internal_summary"], "```", ""]
+    return lines
+
+
+def init_output(path: str = "eval_output.md") -> None:
+    """Truncate the output file and write the header."""
+    header = "\n".join([
+        f"# Eval output — {datetime.now().strftime('%Y-%m-%d %H:%M')}",
+        "",
+    ])
+    Path(path).write_text(header, encoding="utf-8")
+
+
+def append_section(section: dict, path: str = "eval_output.md", include_internal_summary: bool = True) -> None:
+    """Append a single scored section to the output file."""
+    lines = _section_lines(section, include_internal_summary)
+    with Path(path).open("a", encoding="utf-8") as f:
+        f.write("\n".join(lines))
+
+
 def write_output(sections: list[dict], path: str = "eval_output.md", include_internal_summary: bool = True) -> None:
     lines = [
         f"# Eval output — {datetime.now().strftime('%Y-%m-%d %H:%M')}",
@@ -63,45 +114,6 @@ def write_output(sections: list[dict], path: str = "eval_output.md", include_int
         "",
     ]
     for s in sections:
-        score = s["score"]
-        avg = s["avg"]
-        lines += [
-            f"---",
-            f"## [{s['index']}] {s['subject']}",
-            f"**Queue:** {s['queue']} | **Type:** {s['type']} | **Priority:** {s['priority']}",
-            f"**Skills:** {s['skills']}",
-            f"**Tools:** {s['tools']}",
-            f"**Scores:** action={score['action']}/5  completeness={score['completeness']}/5  tone={score['tone']}/5  avg={avg:.1f}",
-            f"**Comment:** {score['comment']}",
-            "",
-            "### Email",
-            "```",
-            f"Subject: {s['subject']}",
-            "",
-            s["body"],
-            "```",
-            "",
-            "### Ground truth",
-            "```",
-            s["ground_truth"],
-            "```",
-            "",
-            "### Generated",
-            "```",
-            s["generated"],
-            "```",
-            "",
-            *(
-                [
-                    "### Internal summary",
-                    "```",
-                    s["internal_summary"],
-                    "```",
-                    "",
-                ]
-                if include_internal_summary and s["internal_summary"]
-                else []
-            ),
-        ]
+        lines += _section_lines(s, include_internal_summary)
     Path(path).write_text("\n".join(lines), encoding="utf-8")
     print(f"\nSaved to {path}")

@@ -22,7 +22,7 @@ from classifier import classify
 from orchestrator_agent import orchestrate
 from input_screener import screen_email
 from email_sanitizer import sanitize
-from evaluator import judge, write_output
+from evaluator import judge, init_output, append_section
 from improver import (
     load_kb,
     load_all_skills,
@@ -79,6 +79,10 @@ async def main():
     print(f"Pipeline starting — {args.limit} email(s), language={args.language}"
           f"{' [' + mode_tag + ']' if mode_tag else ''}\n")
     print("=" * 70)
+
+    out_path = "eval_output.md"
+    if run_eval and args.save:
+        init_output(out_path)
 
     for i, email in enumerate(
         email_stream(language=args.language, limit=args.limit,
@@ -172,6 +176,8 @@ async def main():
                 "avg":              avg,
             }
             output_sections.append(section)
+            if args.save:
+                append_section(section, out_path, include_internal_summary=args.internal_summary)
 
             # Improve
             if run_improve and avg < args.min_score:
@@ -216,7 +222,7 @@ async def main():
         print(f"  overall:      {overall:.1f}/5")
 
     if args.save and output_sections:
-        write_output(output_sections, include_internal_summary=args.internal_summary)
+        print(f"\nSaved to {out_path}")
 
 
 if __name__ == "__main__":
