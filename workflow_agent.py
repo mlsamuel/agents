@@ -24,11 +24,11 @@ from mcp.client.stdio import stdio_client, StdioServerParameters
 
 from client import Client
 from logger import get_logger
+import skills as skills_db
 log = get_logger(__name__)
 
 load_dotenv()
 
-SKILLS_DIR = Path(__file__).parent / "skills"
 MCP_SERVER = Path(__file__).parent / "mcp_server.py"
 PYTHON = sys.executable
 
@@ -56,40 +56,6 @@ class WorkflowResult:
     escalated: bool
     skill_used: str
     tool_calls: list[dict] = field(default_factory=list)
-
-
-# ── Skill loader ───────────────────────────────────────────────────────────────
-
-def _parse_frontmatter(text: str) -> tuple[dict, str]:
-    """Split YAML frontmatter and body from a skill .md file."""
-    if not text.startswith("---"):
-        return {}, text
-    parts = text.split("---", 2)
-    if len(parts) < 3:
-        return {}, text
-    import yaml
-    meta = yaml.safe_load(parts[1]) or {}
-    body = parts[2].strip()
-    return meta, body
-
-
-def load_skills(agent_key: str) -> list[dict]:
-    """Return all skills for the given agent key, parsed from .md files."""
-    folder = SKILLS_DIR / agent_key
-    if not folder.exists():
-        folder = SKILLS_DIR / "general"
-    skills = []
-    for path in sorted(folder.glob("*.md")):
-        text = path.read_text()
-        meta, body = _parse_frontmatter(text)
-        skills.append({
-            "name": meta.get("name", path.stem),
-            "types": meta.get("types", []),
-            "tools": meta.get("tools", []),
-            "system_prompt": body,
-            "path": str(path),
-        })
-    return skills
 
 
 # ── Skill selector ─────────────────────────────────────────────────────────────
@@ -313,7 +279,7 @@ async def _run_workflow(
 class WorkflowAgent:
     def __init__(self, agent_key: str):
         self.agent_key = agent_key
-        self.skills = load_skills(agent_key)
+        self.skills = skills_db.load_sync(agent_key)
         self._client = Client()
 
     def run(self, email: dict, classification: dict) -> WorkflowResult:

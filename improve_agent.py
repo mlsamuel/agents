@@ -23,6 +23,7 @@ import asyncio
 import json
 from collections import defaultdict
 from pathlib import Path
+import yaml
 
 from dotenv import load_dotenv
 from client import Client
@@ -32,6 +33,7 @@ from orchestrator_agent import orchestrate
 from eval_agent import judge, _write_output, _write_json
 from logger import get_logger
 import kb
+import skills as skills_db
 
 log = get_logger(__name__)
 
@@ -125,20 +127,8 @@ def _load_eval(path: str) -> list[dict]:
 
 
 def _load_all_skills() -> dict[str, dict]:
-    """Return {skill_name: {path, content}} for all .md files under skills/."""
-    skills = {}
-    for md in SKILLS_DIR.glob("**/*.md"):
-        content = md.read_text()
-        # Extract name from frontmatter if present, else use stem
-        name = md.stem
-        if content.startswith("---"):
-            parts = content.split("---", 2)
-            if len(parts) >= 3:
-                import yaml
-                meta = yaml.safe_load(parts[1]) or {}
-                name = meta.get("name", name)
-        skills[name] = {"path": md, "content": content}
-    return skills
+    """Return {skill_name: {queue, types, tools, content}} for all active skills."""
+    return skills_db.load_all_sync()
 
 
 def _load_kb() -> list[dict]:
@@ -189,8 +179,8 @@ def _generate_proposals(
     category = QUEUE_TO_KEY.get(records[0]["queue"], "general")
     kb_entries = _kb_for_category(kb, category)
 
-    skill_content = skill_info["content"] if skill_info else "(skill file not found)"
-    skill_file    = str(skill_info["path"].relative_to(Path(__file__).parent)) if skill_info else f"skills/{category}/{skill_name}.md"
+    skill_content = skill_info["content"] if skill_info else "(skill not found)"
+    skill_file    = f"skills/{skill_info['queue']}/{skill_name}.md" if skill_info else f"skills/{category}/{skill_name}.md"
 
     user_msg = (
         f"## Skill file: {skill_file}\n\n"
@@ -252,18 +242,38 @@ def _write_proposals(all_proposals: list[dict], path: str = "improve_proposals.m
 
 # ── Apply ────────────────────────────────────────────────────────────────────
 
+def _parse_frontmatter(text: str) -> tuple[dict, str]:
+    """Split YAML frontmatter and body. Returns ({}, text) if no frontmatter."""
+    if not text.startswith("---"):
+        return {}, text
+    parts = text.split("---", 2)
+    if len(parts) < 3:
+        return {}, text
+    meta = yaml.safe_load(parts[1]) or {}
+    return meta, parts[2].strip()
+
+
 def _apply_proposals(all_proposals: list[dict]) -> None:
     kb_json = _load_kb()
-    base = Path(__file__).parent
 
     for p in all_proposals:
         ptype = p["type"]
         if ptype in ("skill_edit", "new_skill"):
-            target = base / p["skill_file"]
-            target.parent.mkdir(parents=True, exist_ok=True)
-            target.write_text(p["new_content"], encoding="utf-8")
-            action = "Updated" if ptype == "skill_edit" else "Created"
-            print(f"  {action}: {p['skill_file']}")
+            meta, body = _parse_frontmatter(p["new_content"])
+            name  = meta.get("name", "unknown")
+            queue = QUEUE_TO_KEY.get(meta.get("queue", ""), "general")
+            types = meta.get("types", [])
+            tools = meta.get("tools", [])
+            try:
+                if ptype == "skill_edit":
+                    ver = asyncio.run(skills_db.upsert_version(name, queue, types, tools, body))
+                    print(f"  Skill updated: {name} → v{ver}")
+                else:
+                    asyncio.run(skills_db.insert_new(name, queue, types, tools, body))
+                    print(f"  New skill created: {name} v1")
+            except Exception as exc:
+                log.error("Skill DB write failed for '%s': %s", name, exc)
+                raise
 
         elif ptype == "kb_entry":
             entry = p["entry"]
@@ -366,6 +376,7 @@ def main():
     args = parser.parse_args()
 
     asyncio.run(kb.get_pool())
+    asyncio.run(skills_db.get_pool())
 
     client = Client()
 

@@ -24,6 +24,7 @@ from classifier_agent import classify
 from orchestrator_agent import orchestrate
 from input_screener import screen_email
 import kb
+import skills as skills_db
 
 load_dotenv()
 
@@ -86,6 +87,7 @@ def main():
     args = parser.parse_args()
 
     asyncio.run(kb.get_pool())
+    asyncio.run(skills_db.get_pool())
 
     client = Client()
     scores = []
