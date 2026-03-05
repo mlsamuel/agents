@@ -163,25 +163,35 @@ def generate_proposals(
     skill_content = skill_info["content"] if skill_info else "(skill not found)"
     skill_file    = f"skills/{skill_info['queue']}/{skill_name}.md" if skill_info else f"skills/{category}/{skill_name}.md"
 
+    kb_summary = [{"id": e["id"], "topic": e["topic"], "question": e["question"]}
+                  for e in kb_entries]
+
     user_msg = (
         f"## Skill file: {skill_file}\n\n"
         f"```\n{skill_content}\n```\n\n"
         f"## Failing examples (avg < threshold)\n\n"
         f"{_build_examples_text(records)}\n\n"
-        f"## Current knowledge base entries (category: {category})\n\n"
-        f"```json\n{json.dumps(kb_entries, indent=2)}\n```\n\n"
+        f"## Existing knowledge base entries (category: {category}) — id, topic, question only\n\n"
+        f"```json\n{json.dumps(kb_summary, indent=2)}\n```\n\n"
         f"Propose improvements. Remember: respond with JSON only."
     )
 
     response = client.messages.create(
         model=IMPROVE_MODEL,
-        max_tokens=4096,
+        max_tokens=16000,
         system=IMPROVE_SYSTEM,
         messages=[{"role": "user", "content": user_msg}],
     )
+    if response.stop_reason == "max_tokens":
+        raise RuntimeError(
+            f"generate_proposals response was truncated (stop_reason=max_tokens, "
+            f"{response.usage.output_tokens} tokens used). Increase max_tokens or reduce input."
+        )
     raw = response.content[0].text.strip()
     if raw.startswith("```"):
-        raw = raw.split("```")[1].lstrip("json").strip()
+        raw = raw[raw.index("\n") + 1:]       # drop opening ```json line
+        if raw.endswith("```"):
+            raw = raw[:raw.rindex("```")].rstrip()  # drop closing ```
     data = json.loads(raw)
     return data.get("proposals", [])
 
@@ -199,7 +209,7 @@ def _parse_frontmatter(text: str) -> tuple[dict, str]:
     return meta, parts[2].strip()
 
 
-def apply_proposals(all_proposals: list[dict]) -> None:
+async def _apply_proposals_async(all_proposals: list[dict]) -> None:
     kb_json = load_kb()
 
     for p in all_proposals:
@@ -212,10 +222,10 @@ def apply_proposals(all_proposals: list[dict]) -> None:
             tools = meta.get("tools", [])
             try:
                 if ptype == "skill_edit":
-                    ver = asyncio.run(skills_db.upsert_version(name, queue, types, tools, body))
+                    ver = await skills_db.upsert_version(name, queue, types, tools, body)
                     print(f"  Skill updated: {name} → v{ver}")
                 else:
-                    asyncio.run(skills_db.insert_new(name, queue, types, tools, body))
+                    await skills_db.insert_new(name, queue, types, tools, body)
                     print(f"  New skill created: {name} v1")
             except Exception as exc:
                 log.error("Skill DB write failed for '%s': %s", name, exc)
@@ -223,13 +233,12 @@ def apply_proposals(all_proposals: list[dict]) -> None:
 
         elif ptype == "kb_entry":
             entry = p["entry"]
-            # Assign a fresh ID if the proposed one collides
             existing_ids = {e["id"] for e in kb_json}
             if entry.get("id") in existing_ids:
                 entry["id"] = _next_kb_id(kb_json, entry.get("category", "general"))
             kb_json.append(entry)
             try:
-                asyncio.run(kb.insert(entry))
+                await kb.insert(entry)
                 print(f"  KB entry added: {entry['id']} — {entry.get('topic', '')} (DB + JSON)")
             except Exception as exc:
                 log.warning("KB DB insert failed: %s — JSON only", exc)
@@ -237,6 +246,10 @@ def apply_proposals(all_proposals: list[dict]) -> None:
 
     KB_PATH.write_text(json.dumps(kb_json, indent=2), encoding="utf-8")
     print(f"  Knowledge base saved to {KB_PATH}")
+
+
+def apply_proposals(all_proposals: list[dict]) -> None:
+    asyncio.run(_apply_proposals_async(all_proposals))
 
 
 # ── Re-evaluate ──────────────────────────────────────────────────────────────

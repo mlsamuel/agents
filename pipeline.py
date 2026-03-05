@@ -8,8 +8,8 @@ Modes:
 
 Usage:
     python pipeline.py --limit 2
-    python pipeline.py --eval --limit 3
-    python pipeline.py --eval --improve --apply --limit 3
+    python pipeline.py --no-improve --limit 3
+    python pipeline.py --no-eval --limit 3
 """
 
 import argparse
@@ -41,12 +41,12 @@ load_dotenv()
 
 def main():
     parser = argparse.ArgumentParser()
-    parser.add_argument("--eval",             action="store_true", default=False,
-                        help="Run LLM-as-judge scoring after each email")
-    parser.add_argument("--improve",          action="store_true", default=False,
-                        help="Generate improvement proposals (requires --eval)")
-    parser.add_argument("--apply",            action="store_true", default=False,
-                        help="Apply proposals to DB immediately (requires --improve)")
+    parser.add_argument("--eval",             default=True, action=argparse.BooleanOptionalAction,
+                        help="Run LLM-as-judge scoring after each email (default: true)")
+    parser.add_argument("--improve",          default=True, action=argparse.BooleanOptionalAction,
+                        help="Generate improvement proposals (requires --eval, default: true)")
+    parser.add_argument("--apply",            default=True, action=argparse.BooleanOptionalAction,
+                        help="Apply proposals to DB immediately (requires --improve, default: true)")
     parser.add_argument("--limit",            type=int,   default=3)
     parser.add_argument("--offset",           type=int,   default=0)
     parser.add_argument("--language",         type=str,   default="en")
@@ -55,7 +55,7 @@ def main():
     parser.add_argument("--save",             default=True, action=argparse.BooleanOptionalAction,
                         help="Write eval_output.md when --eval is set (default: true)")
     parser.add_argument("--internal-summary", default=False, action=argparse.BooleanOptionalAction)
-    parser.add_argument("--min-score",        type=float, default=4.0,
+    parser.add_argument("--min-score",        type=float, default=4.6,
                         help="Threshold for failing emails in improve step (default: 4.0)")
     args = parser.parse_args()
 
@@ -153,8 +153,7 @@ def main():
         score = judge(client, email, ground_truth, generated)
         avg   = (score["action"] + score["completeness"] + score["tone"]) / 3
         print(f"  [eval]        action={score['action']}/5  completeness={score['completeness']}/5  "
-              f"tone={score['tone']}/5  avg={avg:.1f}")
-        print(f"                {score['comment']}")
+              f"tone={score['tone']}/5  avg={avg:.1f}  comment: {score['comment']}")
 
         internal_summary = result.results[0].internal_summary if result.results else ""
         output_sections.append({
