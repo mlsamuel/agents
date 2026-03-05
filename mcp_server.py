@@ -15,10 +15,8 @@ Run standalone (for testing):
   python run -n base python mcp_server.py
 """
 
+import asyncio
 import os
-import warnings
-os.environ.setdefault("TOKENIZERS_PARALLELISM", "false")
-warnings.filterwarnings("ignore", category=FutureWarning, module="huggingface_hub")
 
 from logger import get_logger  # also silences third-party loggers on import
 
@@ -40,39 +38,9 @@ from datetime import datetime, timedelta
 from pathlib import Path
 from mcp.server.fastmcp import FastMCP
 
-try:
-    import numpy as np
-    from sentence_transformers import SentenceTransformer
-    _ST_AVAILABLE = True
-except ImportError:
-    _ST_AVAILABLE = False
+import kb
 
 mcp = FastMCP("SupportBackend")
-
-# ── knowledge base ──────────────────────────────────────────────────────────────
-
-_KB_ENTRIES: list[dict] = []
-_KB_EMBEDDINGS = None   # np.ndarray shape (N, dim) once loaded
-_EMBED_MODEL = None     # SentenceTransformer instance
-
-
-def _load_knowledge_base() -> None:
-    global _KB_ENTRIES, _KB_EMBEDDINGS, _EMBED_MODEL
-    if not _ST_AVAILABLE:
-        return
-    try:
-        kb_path = Path(__file__).parent / "data" / "knowledge_base.json"
-        _KB_ENTRIES = json.loads(kb_path.read_text())
-        _EMBED_MODEL = SentenceTransformer("all-MiniLM-L6-v2")
-        questions = [e["question"] for e in _KB_ENTRIES]
-        _KB_EMBEDDINGS = _EMBED_MODEL.encode(questions, convert_to_numpy=True)
-        log.debug("Knowledge base loaded: %d entries", len(_KB_ENTRIES))
-    except Exception as exc:
-        log.warning("Knowledge base unavailable: %s", exc)
-        _KB_ENTRIES = []
-
-
-_load_knowledge_base()
 
 # ── helpers ────────────────────────────────────────────────────────────────────
 
@@ -208,7 +176,7 @@ def send_reply(message: str, ticket_id: str = "") -> dict:
 
 
 @mcp.tool()
-def search_knowledge_base(query: str, category: str = "", top_k: int = 3) -> list[dict]:
+async def search_knowledge_base(query: str, category: str = "", top_k: int = 3) -> list[dict]:
     """Search the support knowledge base for policy answers relevant to a query.
 
     Returns up to top_k entries with answer text and a relevance score (0–1).
@@ -220,38 +188,12 @@ def search_knowledge_base(query: str, category: str = "", top_k: int = 3) -> lis
                   Leave blank to search all categories.
         top_k:    Maximum number of results to return (default 3).
     """
-    if not _KB_ENTRIES or _KB_EMBEDDINGS is None or _EMBED_MODEL is None:
-        return []
+    return await kb.search(query, category, top_k)
 
-    corpus = _KB_ENTRIES
-    embeddings = _KB_EMBEDDINGS
 
-    if category:
-        indices = [i for i, e in enumerate(_KB_ENTRIES) if e.get("category") == category]
-        if indices:
-            corpus = [_KB_ENTRIES[i] for i in indices]
-            embeddings = _KB_EMBEDDINGS[indices]
-
-    q_vec = _EMBED_MODEL.encode([query], convert_to_numpy=True)[0]
-    norms = np.linalg.norm(embeddings, axis=1) * np.linalg.norm(q_vec)
-    scores = np.where(norms > 0, embeddings @ q_vec / norms, 0.0)
-
-    top_indices = np.argsort(scores)[::-1][:top_k]
-    results = []
-    for idx in top_indices:
-        score = float(scores[idx])
-        if score < 0.25:
-            break
-        entry = corpus[idx]
-        results.append({
-            "id": entry["id"],
-            "category": entry["category"],
-            "topic": entry["topic"],
-            "question": entry["question"],
-            "answer": entry["answer"],
-            "score": round(score, 3),
-        })
-    return results
+def _kb_search_sync(query: str, category: str = "", top_k: int = 3) -> list[dict]:
+    """Sync wrapper used by the Docker sandbox tool registry."""
+    return asyncio.run(kb.search(query, category, top_k))
 
 
 # ── sandboxed code execution ────────────────────────────────────────────────────
@@ -334,7 +276,7 @@ _TOOL_REGISTRY: dict[str, dict] = {
         "escalate_to_human": escalate_to_human,
     },
     "kb": {
-        "search_knowledge_base": search_knowledge_base,
+        "search_knowledge_base": _kb_search_sync,
     },
 }
 

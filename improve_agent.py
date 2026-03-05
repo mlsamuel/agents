@@ -19,6 +19,7 @@ Usage:
 """
 
 import argparse
+import asyncio
 import json
 from collections import defaultdict
 from pathlib import Path
@@ -30,6 +31,7 @@ from classifier_agent import classify
 from orchestrator_agent import orchestrate
 from eval_agent import judge, _write_output, _write_json
 from logger import get_logger
+import kb
 
 log = get_logger(__name__)
 
@@ -251,7 +253,7 @@ def _write_proposals(all_proposals: list[dict], path: str = "improve_proposals.m
 # ── Apply ────────────────────────────────────────────────────────────────────
 
 def _apply_proposals(all_proposals: list[dict]) -> None:
-    kb = _load_kb()
+    kb_json = _load_kb()
     base = Path(__file__).parent
 
     for p in all_proposals:
@@ -266,13 +268,18 @@ def _apply_proposals(all_proposals: list[dict]) -> None:
         elif ptype == "kb_entry":
             entry = p["entry"]
             # Assign a fresh ID if the proposed one collides
-            existing_ids = {e["id"] for e in kb}
+            existing_ids = {e["id"] for e in kb_json}
             if entry.get("id") in existing_ids:
-                entry["id"] = _next_kb_id(kb, entry.get("category", "general"))
-            kb.append(entry)
-            print(f"  KB entry added: {entry['id']} — {entry.get('topic', '')}")
+                entry["id"] = _next_kb_id(kb_json, entry.get("category", "general"))
+            kb_json.append(entry)
+            try:
+                asyncio.run(kb.insert(entry))
+                print(f"  KB entry added: {entry['id']} — {entry.get('topic', '')} (DB + JSON)")
+            except Exception as exc:
+                log.warning("KB DB insert failed: %s — JSON only", exc)
+                print(f"  KB entry added: {entry['id']} — {entry.get('topic', '')} (JSON only)")
 
-    KB_PATH.write_text(json.dumps(kb, indent=2), encoding="utf-8")
+    KB_PATH.write_text(json.dumps(kb_json, indent=2), encoding="utf-8")
     print(f"  Knowledge base saved to {KB_PATH}")
 
 
@@ -357,6 +364,8 @@ def main():
     parser.add_argument("--apply",     action="store_true",
                         help="Apply proposals to disk and re-run eval to measure delta")
     args = parser.parse_args()
+
+    asyncio.run(kb.get_pool())
 
     client = Client()
 

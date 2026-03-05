@@ -8,6 +8,7 @@ Usage:
 """
 
 import argparse
+import asyncio
 from dotenv import load_dotenv
 from client import Client
 
@@ -16,6 +17,7 @@ from classifier_agent import classify
 from orchestrator_agent import orchestrate
 from input_screener import screen_email
 from email_sanitizer import sanitize
+import kb
 
 load_dotenv()
 
@@ -28,6 +30,8 @@ def main():
     parser.add_argument("--screen", default=True, action=argparse.BooleanOptionalAction,
                         help="Run input screener (Haiku injection detector). Default: on.")
     args = parser.parse_args()
+
+    asyncio.run(kb.get_pool())
 
     client = Client()
 

@@ -41,14 +41,12 @@
 - New file: `db.py` (connection pool, schema bootstrap, query helpers)
 - Updated file: `mcp_server.py`
 
-**1b. Postgres + pgvector + VoyageAI for the knowledge base** — *fixes D3, D4*
-- Move `data/knowledge_base.json` → `knowledge_base` Postgres table with a `pgvector` embedding column
-- Replace `SentenceTransformer` with **VoyageAI** (`voyage-3-lite` / `voyage-3`)
-  - Embeddings computed at insert time via VoyageAI API; stored in pgvector
-  - `search_knowledge_base` issues an ANN query instead of numpy dot product
-  - No model loaded in-process → fast MCP server cold start
-- `improve_agent` KB proposals: embed via VoyageAI → INSERT row (no JSON rewrite)
-- New file: `embeddings.py` (VoyageAI client wrapper)
+**1b. Postgres + pgvector for the knowledge base** — *fixes D3, D4* ✅
+- `data/knowledge_base.json` → `knowledge_base` Postgres table with HNSW-indexed `vector(384)` column
+- `sentence-transformers` (all-MiniLM-L6-v2) used for embeddings (VoyageAI skipped)
+- `search_knowledge_base` issues ANN query via pgvector `<=>` operator instead of numpy dot product
+- `improve_agent` KB proposals: INSERT row to DB in addition to JSON update
+- New file: `kb.py` (asyncpg pool, schema bootstrap, seed from JSON, search, insert)
 - Updated files: `mcp_server.py`, `improve_agent.py`
 
 **1c. Postgres for skills** — *fixes D2*
@@ -137,4 +135,4 @@ Ongoing   Phase 3bc Cost tracking, structured logging
 | `client.py` | Cost tracking |
 | `logger.py` | `RotatingFileHandler` |
 | NEW `db.py` | asyncpg pool, schema, query helpers |
-| NEW `embeddings.py` | VoyageAI client wrapper |
+| NEW `kb.py` | asyncpg pool, schema bootstrap, pgvector search + insert ✅ |

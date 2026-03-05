@@ -13,6 +13,7 @@ Usage:
 """
 
 import argparse
+import asyncio
 import json
 from datetime import datetime
 from pathlib import Path
@@ -22,6 +23,7 @@ from email_stream import email_stream
 from classifier_agent import classify
 from orchestrator_agent import orchestrate
 from input_screener import screen_email
+import kb
 
 load_dotenv()
 
@@ -82,6 +84,8 @@ def main():
     parser.add_argument("--screen", default=True, action=argparse.BooleanOptionalAction,
                         help="Run input screener before each email (default: true)")
     args = parser.parse_args()
+
+    asyncio.run(kb.get_pool())
 
     client = Client()
     scores = []
