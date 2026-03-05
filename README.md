@@ -54,7 +54,17 @@ cp .env.example .env
 # edit .env and add your Anthropic API key
 ```
 
-**3. Run the pipeline**
+**3. Docker sandbox (optional)**
+
+`run_code` executes agent-generated Python in a Docker container for isolation. Without Docker it falls back to in-process execution automatically.
+
+To enable the sandbox, ensure Docker is running and pull the base image:
+
+```bash
+docker pull python:3.12-slim
+```
+
+**4. Run the pipeline**
 
 ```bash
 python pipeline.py --limit 3

@@ -15,6 +15,11 @@ Run standalone (for testing):
   python run -n base python mcp_server.py
 """
 
+import os
+import warnings
+os.environ.setdefault("TOKENIZERS_PARALLELISM", "false")
+warnings.filterwarnings("ignore", category=FutureWarning, module="huggingface_hub")
+
 from logger import get_logger  # also silences third-party loggers on import
 
 log = get_logger(__name__)
@@ -367,9 +372,10 @@ def run_code(code: str, allowed_tools: list[str], timeout: int = 10) -> dict:
     log.debug("run_code called — allowed_tools=%s\n--- code ---\n%s\n--- end ---", allowed_tools, code)
 
     if _DOCKER_AVAILABLE and _SANDBOX_RUNNER.exists():
+        log.debug("run_code: using Docker sandbox")
         return _run_code_docker(code, allowed_tools, timeout)
 
-    log.warning("Docker unavailable — falling back to in-process exec sandbox")
+    log.warning("run_code: Docker unavailable — falling back to in-process exec sandbox")
     return _run_code_exec(code, allowed_tools, timeout)
 
 
@@ -377,9 +383,10 @@ def _run_code_docker(code: str, allowed_tools: list[str], timeout: int) -> dict:
     """Run code in an isolated Docker container using the stdio tool-call protocol."""
     code_b64 = base64.b64encode(code.encode()).decode()
     name = f"sandbox-{uuid.uuid4().hex[:8]}"
+    log.debug("docker sandbox: starting container %s (timeout=%ds)", name, timeout)
 
     cmd = [
-        "docker", "run", "--rm",
+        "docker", "run", "--rm", "-i",
         "--name", name,
         "--network", "none",
         "--memory", "128m",
@@ -417,15 +424,20 @@ def _run_code_docker(code: str, allowed_tools: list[str], timeout: int) -> dict:
     timer.start()
 
     try:
-        for raw_line in proc.stdout:
+        while True:
+            raw_line = proc.stdout.readline()
+            if not raw_line:
+                break
             line = raw_line.decode(errors="replace")
             if line.startswith("__CALL__:"):
                 try:
                     call = json.loads(line[9:])
                     ns, fn, kwargs = call["ns"], call["fn"], call["kwargs"]
                     if ns in _TOOL_REGISTRY and fn in _TOOL_REGISTRY[ns]:
+                        log.debug("docker sandbox: tool call %s.%s kwargs=%s", ns, fn, kwargs)
                         result = _TOOL_REGISTRY[ns][fn](**kwargs)
                     else:
+                        log.debug("docker sandbox: blocked tool call %s.%s", ns, fn)
                         result = {"__error__": f"Tool {ns}.{fn} not in allowed_tools"}
                 except Exception as exc:
                     result = {"__error__": str(exc)}
