@@ -22,16 +22,11 @@ from logger import get_logger  # also silences third-party loggers on import
 
 log = get_logger(__name__)
 
-import ast
 import base64
-import io
 import json
 import random
-import shutil
-import signal
 import string
 import subprocess
-import sys
 import threading
 import uuid
 from datetime import datetime, timedelta
@@ -200,61 +195,6 @@ def _kb_search_sync(query: str, category: str = "", top_k: int = 3) -> list[dict
 
 _SANDBOX_RUNNER = Path(__file__).parent / "sandbox_runner.py"
 _DOCKER_IMAGE = "python:3.12-slim"
-_DOCKER_AVAILABLE = shutil.which("docker") is not None
-
-_BLOCKED_MODULES = frozenset({
-    "os", "sys", "subprocess", "multiprocessing", "threading", "concurrent",
-    "signal", "ctypes", "socket", "ssl", "http", "urllib", "requests", "httpx",
-    "aiohttp", "importlib", "pkgutil", "runpy", "code", "builtins", "types",
-    "gc", "inspect", "pickle", "shelve", "sqlite3", "pathlib", "shutil",
-    "glob", "tempfile", "pty", "mmap",
-})
-
-_SAFE_BUILTINS = {
-    "print": print, "len": len, "range": range, "enumerate": enumerate,
-    "zip": zip, "map": map, "filter": filter, "sorted": sorted,
-    "list": list, "dict": dict, "set": set, "tuple": tuple,
-    "str": str, "int": int, "float": float, "bool": bool,
-    "min": min, "max": max, "sum": sum, "abs": abs, "round": round,
-    "isinstance": isinstance, "repr": repr,
-    "json": json,
-}
-
-
-def _ast_check(source: str) -> str | None:
-    """Return an error string if the source contains blocked patterns, else None."""
-    try:
-        tree = ast.parse(source)
-    except SyntaxError as e:
-        return f"SyntaxError: {e}"
-
-    for node in ast.walk(tree):
-        if isinstance(node, ast.Import):
-            for alias in node.names:
-                root = alias.name.split(".")[0]
-                if root in _BLOCKED_MODULES:
-                    return f"Import of '{alias.name}' is not allowed"
-        elif isinstance(node, ast.ImportFrom):
-            if node.module:
-                root = node.module.split(".")[0]
-                if root in _BLOCKED_MODULES:
-                    return f"Import from '{node.module}' is not allowed"
-        elif isinstance(node, ast.Attribute):
-            if node.attr.startswith("__") and node.attr.endswith("__"):
-                return f"Access to dunder attribute '{node.attr}' is not allowed"
-        elif isinstance(node, ast.Call):
-            if isinstance(node.func, ast.Name) and node.func.id in ("exec", "eval", "compile"):
-                return f"Call to '{node.func.id}()' is not allowed"
-
-    return None
-
-
-def _make_namespace(fns: dict):
-    """Create a simple namespace object where each key becomes an attribute."""
-    ns = type("Namespace", (), {})()
-    for name, fn in fns.items():
-        setattr(ns, name, fn)
-    return ns
 
 
 # Maps namespace name → {method: backend_function}
@@ -279,10 +219,6 @@ _TOOL_REGISTRY: dict[str, dict] = {
         "search_knowledge_base": _kb_search_sync,
     },
 }
-
-
-def _timeout_handler(signum, frame):
-    raise TimeoutError("Code execution timed out")
 
 
 @mcp.tool()
@@ -312,13 +248,7 @@ def run_code(code: str, allowed_tools: list[str], timeout: int = 10) -> dict:
     """
     timeout = max(1, min(timeout, 30))
     log.debug("run_code called — allowed_tools=%s\n--- code ---\n%s\n--- end ---", allowed_tools, code)
-
-    if _DOCKER_AVAILABLE and _SANDBOX_RUNNER.exists():
-        log.debug("run_code: using Docker sandbox")
-        return _run_code_docker(code, allowed_tools, timeout)
-
-    log.warning("run_code: Docker unavailable — falling back to in-process exec sandbox")
-    return _run_code_exec(code, allowed_tools, timeout)
+    return _run_code_docker(code, allowed_tools, timeout)
 
 
 def _run_code_docker(code: str, allowed_tools: list[str], timeout: int) -> dict:
@@ -412,45 +342,6 @@ def _run_code_docker(code: str, allowed_tools: list[str], timeout: int) -> dict:
     log.debug("run_code result — exit_code=%d  error=%s\n--- stdout ---\n%s\n--- end ---",
               exit_code, error, stdout)
     return {"stdout": stdout, "error": error, "exit_code": exit_code}
-
-
-def _run_code_exec(code: str, allowed_tools: list[str], timeout: int) -> dict:
-    """In-process exec fallback used when Docker is unavailable."""
-    rejection = _ast_check(code)
-    if rejection:
-        return {"stdout": "", "error": rejection, "exit_code": -1}
-
-    safe_globals = {"__builtins__": _SAFE_BUILTINS}
-    for ns_name in allowed_tools:
-        if ns_name in _TOOL_REGISTRY:
-            safe_globals[ns_name] = _make_namespace(_TOOL_REGISTRY[ns_name])
-
-    captured = io.StringIO()
-    old_stdout = sys.stdout
-    sys.stdout = captured
-
-    old_handler = signal.signal(signal.SIGALRM, _timeout_handler)
-    signal.alarm(timeout)
-
-    try:
-        exec(code, safe_globals)  # noqa: S102
-        exit_code = 0
-        error = None
-    except TimeoutError as e:
-        exit_code = -1
-        error = str(e)
-    except Exception as e:
-        exit_code = -1
-        error = f"{type(e).__name__}: {e}"
-    finally:
-        signal.alarm(0)
-        signal.signal(signal.SIGALRM, old_handler)
-        sys.stdout = old_stdout
-
-    result = {"stdout": captured.getvalue()[:8192], "error": error, "exit_code": exit_code}
-    log.debug("run_code result — exit_code=%d  error=%s\n--- stdout ---\n%s\n--- end ---",
-              exit_code, error, result["stdout"])
-    return result
 
 
 if __name__ == "__main__":
