@@ -1,6 +1,6 @@
 # Customer Support Agent System
 
-A multi-agent customer support pipeline built with Claude and the Model Context Protocol (MCP). Emails are classified, routed to specialist workflow agents, and handled using skill files that drive tool selection and reply logic.
+A multi-agent customer support pipeline built with Claude and the Model Context Protocol (MCP). Emails are classified, routed to specialist workflow agents, and handled using skill files that drive tool selection and reply logic. An integrated eval+improve loop scores replies and automatically updates skills and the knowledge base.
 
 ## Architecture
 
@@ -13,13 +13,13 @@ input_screener (optional)     ← Haiku: prompt injection detection
 email_sanitizer               ← pattern-based strip of injection attempts
     │
     ▼
-classifier_agent              ← Haiku: queue / type / priority
+classifier                    ← Haiku: queue / type / priority
     │
     ▼
 orchestrator_agent            ← Sonnet: decomposes multi-topic emails,
     │                            fans out to parallel WorkflowAgents
     ▼
-workflow_agent(s)             ← Sonnet + MCP tools via skill .md files
+workflow_agent(s)             ← Sonnet + MCP tools via skill files (from DB)
     │   ├── lookup_customer
     │   ├── get_ticket_history
     │   ├── create_ticket
@@ -27,13 +27,23 @@ workflow_agent(s)             ← Sonnet + MCP tools via skill .md files
     │   ├── process_refund
     │   ├── escalate_to_human
     │   ├── send_reply
-    │   ├── search_knowledge_base
+    │   ├── search_knowledge_base   ← pgvector ANN over knowledge_base table
     │   └── run_code (sandboxed Python)
     ▼
 merged reply + WorkflowResult
+    │
+    ▼  (when --eval)
+evaluator                     ← Haiku: scores action / completeness / tone
+    │
+    ▼  (when --improve and avg < --min-score)
+improver                      ← Sonnet: proposes skill_edit / kb_entry / new_skill
+    │                            applies to DB; pgvector similarity check before
+    │                            inserting KB entries to prevent duplicates
+    ▼
+Postgres (skills + knowledge_base tables)
 ```
 
-Skills live in `skills/<agent_key>/*.md` (YAML frontmatter + system prompt). The improve pipeline can automatically update skills and the knowledge base based on eval scores.
+Skills are stored in the `skills` Postgres table (versioned, with `is_active` flag). The knowledge base lives in the `knowledge_base` table with a pgvector HNSW index. Both are seeded from `skills/<queue>/*.md` and `data/knowledge_base.json` on first run.
 
 ## Setup
 
@@ -45,20 +55,22 @@ cd agents
 pip install -r requirements.txt
 ```
 
-`sentence-transformers` will download the `all-MiniLM-L6-v2` model (~90 MB) on first use for knowledge base search.
+`fastembed` will download the `all-MiniLM-L6-v2` model (~90 MB) on first use for knowledge base embeddings.
 
-**2. Set your API key**
+**2. Set environment variables**
 
 ```bash
 cp .env.example .env
-# edit .env and add your Anthropic API key
+# edit .env — required:
+#   ANTHROPIC_API_KEY=...
+#   DATABASE_URL=postgresql://user:pass@host/dbname
 ```
+
+The database schema (tables, HNSW index) is created automatically on first run. Seed data is loaded from `data/knowledge_base.json` and `skills/**/*.md` if the tables are empty.
 
 **3. Docker sandbox (optional)**
 
 `run_code` executes agent-generated Python in a Docker container for isolation. Without Docker it falls back to in-process execution automatically.
-
-To enable the sandbox, ensure Docker is running and pull the base image:
 
 ```bash
 docker pull python:3.12-slim
@@ -70,85 +82,103 @@ docker pull python:3.12-slim
 python pipeline.py --limit 3
 ```
 
-## Scripts
+## Pipeline flags
 
-| Script | Purpose | Key flags |
-|--------|---------|-----------|
-| `pipeline.py` | End-to-end: stream → classify → route → reply | `--limit N`, `--language en\|de`, `--no-screen` |
-| `classifier_agent.py` | Classify emails only | `--limit N` |
-| `eval_agent.py` | Run eval and score replies against ground truth | `--limit N`, `--offset N`, `--no-screen`, `--save` |
-| `improve_agent.py` | Propose and apply skill/KB improvements from eval results | `--min-score 4.0`, `--apply` |
+```
+python pipeline.py [options]
 
-### Eval + improve loop
+Core
+  --limit N           emails to process (default: 3)
+  --offset N          skip first N emails (default: 0)
+  --language LANG     filter by language: en | de (default: en)
+  --shuffle           randomise email order
 
-```bash
-# 1. Run eval — scores replies against ground truth, writes eval_results.json + eval_output.md
-python eval_agent.py --limit 20 --save
+Safety
+  --screen / --no-screen   run injection screener (default: on)
 
-# 2. Inspect proposals without changing anything (dry run)
-python improve_agent.py --min-score 4.0
+Eval  (default: on)
+  --eval / --no-eval
+  --save / --no-save       write eval_output.md, appended per email (default: on)
+  --internal-summary       include agent internal summaries in eval_output.md
 
-# 3. Apply improvements + re-evaluate the same emails to measure the delta
-python improve_agent.py --min-score 4.0 --apply
+Improve  (default: on, requires --eval)
+  --improve / --no-improve
+  --apply / --no-apply     apply proposals to DB immediately (default: on)
+  --min-score FLOAT        avg score threshold to trigger improve (default: 4.6)
 ```
 
-### How the improve agent works
+### Common invocations
 
-`improve_agent.py` reads `eval_results.json`, filters to emails where the average score is below `--min-score`, groups them by skill, then calls Claude Sonnet once per skill group to propose targeted improvements.
+```bash
+# Pipeline only — no eval/improve
+python pipeline.py --no-eval --limit 5
+
+# Eval only — scores replies, writes eval_output.md
+python pipeline.py --no-improve --limit 20
+
+# Full cycle — eval + improve + apply to DB
+python pipeline.py --limit 10
+
+# Dry run — see proposals without applying
+python pipeline.py --no-apply --limit 5
+```
+
+### How the improve loop works
+
+After each email is scored, if the average is below `--min-score`, the improver analyses the skill used and proposes targeted changes.
 
 **Proposal types**
 
 | Type | When | What it changes |
 |------|------|----------------|
-| `kb_entry` | Ground truth contains specific facts the agent's reply was missing (policies, pricing, procedures, deadlines) | Appends a new entry to `data/knowledge_base.json` |
-| `skill_edit` | Eval comment describes a *workflow* problem (wrong action taken, wrong tool used, wrong order of steps) | Rewrites the skill `.md` file in place |
-| `new_skill` | Email type is entirely unhandled by any existing skill | Creates a new `.md` file under `skills/<queue>/` |
+| `kb_entry` | Ground truth contains facts the agent's reply was missing | Inserts or merges a versioned entry into the `knowledge_base` table |
+| `skill_edit` | Eval comment identifies a workflow problem (wrong action, wrong tool) | Inserts a new active version of the skill into the `skills` table |
+| `new_skill` | Email type is entirely unhandled by any existing skill | Inserts a new skill row into the `skills` table |
 
-The distinction matters: a missing fact is a knowledge base problem, not a skill problem. `skill_edit` is only proposed when the eval comment explicitly identifies a process or workflow gap.
+**KB deduplication** — before inserting a new KB entry, the improver runs a pgvector similarity search. If an existing active entry scores ≥ 0.90 cosine similarity, Haiku merges the two entries and creates a new version rather than inserting a duplicate.
 
-**Decision rules applied by the LLM**
-1. `kb_entry` — always proposed when ground truth has concrete info the agent omitted
-2. `skill_edit` — only when the comment says the agent took the wrong action or followed the wrong process
-3. `new_skill` — rare; only when no existing skill covers the email type at all
-
-**With `--apply`**, proposals are written to disk and the same emails are re-evaluated. A before/after score table is printed and `eval_results.json` / `eval_output.md` are updated with the new scores.
+**Versioning** — both skill and KB updates are non-destructive. The previous active row is set `is_active = false`; a new row with an incremented `version` is inserted. Old versions remain for audit and rollback.
 
 ## Project structure
 
 ```
 agents/
-├── pipeline.py               # main entry point
-├── classifier_agent.py       # email classifier (Haiku)
+├── pipeline.py               # unified entry point: screen → classify → orchestrate → eval → improve
+├── classifier.py             # email classifier (Haiku)
 ├── orchestrator_agent.py     # decomposes + fans out to workflow agents
 ├── workflow_agent.py         # skill-based tool-use loop (Sonnet + MCP)
 ├── mcp_server.py             # FastMCP server — all support backend tools
 ├── email_stream.py           # reads data/emails.csv
 ├── email_sanitizer.py        # pattern-based injection strip
 ├── input_screener.py         # LLM-based injection detector
-├── eval_agent.py             # LLM-as-judge evaluation
-├── improve_agent.py          # eval-driven skill/KB improvement
+├── evaluator.py              # LLM-as-judge scoring (judge, append_section)
+├── improver.py               # eval-driven skill/KB improvement (generate_proposals, apply_proposals)
+├── kb.py                     # asyncpg pool, schema bootstrap, pgvector search/insert/upsert
+├── skills.py                 # asyncpg pool, skill loading and versioning
 ├── logger.py                 # shared logging config
+├── client.py                 # Anthropic client wrapper
 ├── skills/
 │   ├── billing/
 │   ├── general/
 │   ├── returns/
-│   └── technical_support/
+│   └── technical_support/   # seed source — loaded to DB on first run
 └── data/
     ├── emails.csv            # email dataset (subject, body, answer, type, queue, priority, language)
-    └── knowledge_base.json   # support policy KB used by search_knowledge_base tool
+    └── knowledge_base.json  # seed source — loaded to knowledge_base table on first run
 ```
 
 ## Skills
 
-Each skill `.md` file has a YAML frontmatter block and a system prompt body:
+Each skill `.md` file (seed source) has a YAML frontmatter block and a system prompt body:
 
 ```yaml
 ---
 name: process_refund
+queue: billing
 types: [refund, return, billing_dispute]
 tools: [lookup_customer, check_order_status, process_refund, send_reply]
 ---
 You are a refund specialist...
 ```
 
-The `tools` list controls which MCP tools the agent can access. Add new skills by dropping `.md` files into the appropriate `skills/<queue>/` directory.
+At runtime, skills are read from the `skills` Postgres table. The `tools` list controls which MCP tools the agent can access. The improver can update skills in-place (new versioned row, old row deactivated) without touching the seed files.

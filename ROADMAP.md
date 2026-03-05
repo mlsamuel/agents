@@ -7,9 +7,7 @@
 | # | Shortcut | Current state | Consequence |
 |---|----------|--------------|-------------|
 | D1 | **All backend data is mocked** | `mcp_server.py` generates deterministic fake customers/tickets/orders from hashed keywords. | Nothing persists. No real support history. |
-| D2 | **Skills as flat .md files** | YAML frontmatter + body, read from disk. No versioning, no schema validation. | Can't roll back a bad improve run. No audit trail. |
-| D3 | **KB as a flat JSON file** | Loaded into memory, rewritten in full on every update. | Doesn't scale. No versioning. Concurrent writes corrupt it. |
-| D4 | **Embeddings computed in-process** | `SentenceTransformer("all-MiniLM-L6-v2")` runs inside the MCP server. Reloads on every subprocess spawn. | Slow cold start per request. Lower retrieval quality than purpose-built models. |
+| D4 | **Embeddings computed in-process** | `fastembed` (`all-MiniLM-L6-v2`) runs inside the pipeline process. | Slow cold start on first embed. Lower retrieval quality than purpose-built models. |
 
 ### Improve agent gaps
 
@@ -17,14 +15,14 @@
 |---|----------|--------------|-------------|
 | I1 | **Can't propose new MCP tools** | `IMPROVE_SYSTEM` only knows `skill_edit`, `kb_entry`, `new_skill`. | If an email fails because a needed tool doesn't exist, rewriting the skill won't help. |
 | I2 | **No regression testing** | `--apply` re-evals only the *failing* emails. | A skill change that fixes email #3 can break email #7 — undetected. |
-| I3 | **Proposals applied directly to disk** | `_apply_proposals()` writes files immediately, no commit, no approval gate, no rollback. | A bad proposal permanently overwrites a skill. |
-| I4 | **No baseline / experiment tracking** | Eval scores written to `eval_results.json` but no history across runs. | Can't detect gradual drift or measure cumulative improvement. |
+| I3 | **No approval gate or rollback via git** | Proposals write versioned rows to Postgres immediately. Old versions retained with `is_active = false` but no git branch workflow. | A bad proposal can only be rolled back by manually reactivating the previous DB version. |
+| I4 | **No baseline / experiment tracking** | Eval scores written to `eval_output.md` but no history across runs. | Can't detect gradual drift or measure cumulative improvement. |
 
 ### Architecture
 
 | # | Shortcut | Current state | Consequence |
 |---|----------|--------------|-------------|
-| A1 | **New MCP subprocess per request** | `workflow_agent.py` spawns a fresh `mcp_server.py` process per email. KB reloads every time. | High latency, wasted compute, no connection pooling. |
+| A1 | **New MCP subprocess per request** | `workflow_agent.py` spawns a fresh `mcp_server.py` process per email. | High latency, wasted compute, no connection pooling. |
 | A2 | **Max tool turns is a global constant** | `MAX_TOOL_TURNS = 8` hardcoded. | Can't tune per skill, no adaptive termination. |
 | A3 | **Email body hard-truncated at 2000 chars** | Simple slice in `workflow_agent.py`. | Long technical emails lose critical context. |
 | A4 | **No cost tracking** | No visibility into per-run API spend. | Can't budget or optimize model selection. |
@@ -41,21 +39,6 @@
 - New file: `db.py` (connection pool, schema bootstrap, query helpers)
 - Updated file: `mcp_server.py`
 
-**1b. Postgres + pgvector for the knowledge base** — *fixes D3, D4* ✅
-- `data/knowledge_base.json` → `knowledge_base` Postgres table with HNSW-indexed `vector(384)` column
-- `sentence-transformers` (all-MiniLM-L6-v2) used for embeddings (VoyageAI skipped)
-- `search_knowledge_base` issues ANN query via pgvector `<=>` operator instead of numpy dot product
-- `improve_agent` KB proposals: INSERT row to DB in addition to JSON update
-- New file: `kb.py` (asyncpg pool, schema bootstrap, seed from JSON, search, insert)
-- Updated files: `mcp_server.py`, `improve_agent.py`
-
-**1c. Postgres for skills** — *fixes D2*
-- Table: `skills(id, name, queue, types[], tools[], system_prompt, version, active, created_at)`
-- `load_skills()` in `workflow_agent.py` → DB query filtered to `active = true`
-- `improve_agent` skill proposals: INSERT new version row, deactivate old → full history, instant rollback
-- Seed from existing `.md` files on first run
-- Updated files: `workflow_agent.py`, `improve_agent.py`
-
 ---
 
 ### Phase 2 — Improve agent completeness
@@ -64,27 +47,27 @@
 - After `--apply`, re-eval **all** emails for the affected skill(s), not just the failing ones
 - If any previously-passing email drops > 0.5 avg points: warn and require `--force`
 - Flag: `--regression` (default on when `--apply` is used)
-- Updated file: `improve_agent.py`
+- Updated file: `improver.py`
 
 **2b. `new_tool` proposal type** — *fixes I1*
 - Add a tool registry to `mcp_server.py` (tool names, signatures, descriptions)
-- Include tool registry in the improve_agent prompt context
+- Include tool registry in the improver prompt context
 - Detection rule in `IMPROVE_SYSTEM`: if eval comment says agent couldn't do X and no tool covers X → propose `new_tool`
 - Proposal: `{ "type": "new_tool", "tool_name": "...", "parameters": {...}, "rationale": "...", "implementation_sketch": "..." }`
 - `--apply`: writes a stub to `mcp_server.py` with `raise NotImplementedError`; human completes it
-- Updated files: `improve_agent.py`, `mcp_server.py`
+- Updated files: `improver.py`, `mcp_server.py`
 
 **2c. Git-integrated proposals** — *fixes I3*
-- `_apply_proposals()` creates a branch `improve/<timestamp>`, applies changes, commits with link to eval run
-- Dry-run prints a diff and requires confirmation before committing
-- `--no-branch`: apply directly to working tree (opt-in, current behaviour)
-- Updated file: `improve_agent.py`
+- `apply_proposals()` creates a branch `improve/<timestamp>`, applies DB changes, commits eval run metadata
+- Dry-run prints a summary and requires confirmation before applying
+- `--no-branch`: apply directly (opt-in, current behaviour)
+- Updated file: `improver.py`
 
 **2d. Experiment log** — *fixes I4*
 - `improvement_log.jsonl` (gitignored): one JSON line per run — `{ timestamp, run_id, skill_versions, before_avg, after_avg, delta, emails_n }`
-- `eval_agent.py` appends a baseline entry on every `--save` run
-- `improve_agent.py` reads last baseline and prints cumulative improvement trend
-- Updated files: `eval_agent.py`, `improve_agent.py`
+- `evaluator.py` appends a baseline entry on every `--save` run
+- `improver.py` reads last baseline and prints cumulative improvement trend
+- Updated files: `evaluator.py`, `improver.py`
 
 ---
 
@@ -99,7 +82,7 @@
 **3b. Cost tracking** — *fixes A4*
 - Instrument `Client._Messages.create()` to extract `usage.input_tokens + output_tokens`
 - Compute cost using a model pricing table in `client.py`
-- Print per-run cost summary at end of pipeline/eval/improve runs
+- Print per-run cost summary at end of pipeline run
 - Updated file: `client.py`
 
 **3c. Structured logging**
@@ -111,14 +94,12 @@
 ## Sequencing
 
 ```
-Month 1   Phase 1a  Postgres for backend data (customers, tickets, orders)
-Month 2   Phase 1b  VoyageAI + pgvector for knowledge base
-          Phase 1c  Skills in Postgres
+Next      Phase 1a  Postgres for backend data (customers, tickets, orders)
 
-Month 3   Phase 2   Improve agent: regression testing, new_tool proposals,
+Month 1   Phase 2   Improve agent: regression testing, new_tool proposals,
                     git integration, experiment log
 
-Month 4   Phase 3a  Long-lived MCP server (HTTP transport)
+Month 2   Phase 3a  Long-lived MCP server (HTTP transport)
 Ongoing   Phase 3bc Cost tracking, structured logging
 ```
 
@@ -128,11 +109,10 @@ Ongoing   Phase 3bc Cost tracking, structured logging
 
 | File | What changes |
 |------|-------------|
-| `mcp_server.py` | Postgres queries; tool registry; VoyageAI + pgvector KB |
-| `workflow_agent.py` | `load_skills()` → DB; HTTP MCP client |
-| `improve_agent.py` | `new_tool` proposals; regression gate; git branch workflow; experiment log |
-| `eval_agent.py` | Experiment log baseline; cost tracking |
-| `client.py` | Cost tracking |
-| `logger.py` | `RotatingFileHandler` |
-| NEW `db.py` | asyncpg pool, schema, query helpers |
-| NEW `kb.py` | asyncpg pool, schema bootstrap, pgvector search + insert ✅ |
+| `mcp_server.py` | Phase 1a: Postgres queries; Phase 2b: tool registry; Phase 3a: HTTP transport |
+| `workflow_agent.py` | Phase 3a: HTTP MCP client |
+| `improver.py` | Phase 2a: regression gate; Phase 2b: new_tool proposals; Phase 2c: git branch workflow; Phase 2d: experiment log |
+| `evaluator.py` | Phase 2d: experiment log baseline |
+| `client.py` | Phase 3b: cost tracking |
+| `logger.py` | Phase 3c: RotatingFileHandler |
+| NEW `db.py` | Phase 1a: asyncpg pool, schema, query helpers for customers/tickets/orders |
