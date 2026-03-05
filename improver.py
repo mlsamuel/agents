@@ -28,6 +28,15 @@ log = get_logger(__name__)
 
 KB_PATH      = Path(__file__).parent / "data" / "knowledge_base.json"
 IMPROVE_MODEL = "claude-sonnet-4-6"
+MERGE_MODEL   = "claude-haiku-4-5-20251001"
+MERGE_SYSTEM  = """\
+Merge two knowledge base entries on the same topic into one.
+Keep the existing entry's id and category unchanged.
+Combine the question and answer to preserve all unique factual content from both.
+Respond with JSON only, no markdown wrapper, matching this exact schema:
+{"id": "...", "category": "...", "topic": "...", "question": "...", "answer": "...", "keywords": [...]}
+"""
+KB_SIMILARITY_THRESHOLD = 0.90
 
 QUEUE_TO_KEY = {
     "Technical Support":              "technical_support",
@@ -72,7 +81,7 @@ Propose a new_skill only when the email type is entirely unhandled by any existi
 - For skill_edit and new_skill: provide the COMPLETE .md file content (full rewrite).
   Preserve all existing security notes, frontmatter fields, and format rules.
 - For kb_entry: derive the answer text verbatim or near-verbatim from the ground truth.
-  Assign IDs by incrementing from the highest existing ID in that category.
+  Do NOT include an "id" field — IDs are assigned automatically by the database.
 - Respond with valid JSON only, no markdown wrapper, matching this exact schema:
 {
   "proposals": [
@@ -86,7 +95,6 @@ Propose a new_skill only when the email type is entirely unhandled by any existi
       "type": "kb_entry",
       "rationale": "one sentence explaining why",
       "entry": {
-        "id": "general-004",
         "category": "general",
         "topic": "...",
         "question": "...",
@@ -120,16 +128,6 @@ def load_kb() -> list[dict]:
 def _kb_for_category(kb: list[dict], category: str) -> list[dict]:
     return [e for e in kb if e.get("category") == category]
 
-
-def _next_kb_id(kb: list[dict], category: str) -> str:
-    """Return the next unused ID for the given category (e.g. 'general-004')."""
-    existing = [
-        int(e["id"].split("-")[1])
-        for e in kb
-        if e.get("category") == category and "-" in e.get("id", "")
-    ]
-    n = max(existing, default=0) + 1
-    return f"{category}-{n:03d}"
 
 
 # ── Proposal generation ──────────────────────────────────────────────────────
@@ -210,6 +208,29 @@ def generate_proposals(
 
 # ── Apply ────────────────────────────────────────────────────────────────────
 
+async def _merge_kb_entries(client: Client, existing: dict, proposed: dict) -> dict:
+    """Ask the LLM to merge two semantically similar KB entries into one."""
+    user_msg = (
+        f"Existing entry:\n{json.dumps(existing, indent=2)}\n\n"
+        f"Proposed entry:\n{json.dumps(proposed, indent=2)}\n\n"
+        f"Merge these. Keep id={existing['id']!r} and category={existing['category']!r}."
+    )
+    response = client.messages.create(
+        model=MERGE_MODEL,
+        max_tokens=1024,
+        system=MERGE_SYSTEM,
+        messages=[{"role": "user", "content": user_msg}],
+    )
+    raw = response.content[0].text.strip()
+    if raw.startswith("```"):
+        raw = raw[raw.index("\n") + 1:]
+        if raw.endswith("```"):
+            raw = raw[:raw.rindex("```")].rstrip()
+    merged = json.loads(raw)
+    merged["category"] = existing["category"]  # enforce — model must not change category
+    merged["topic"]    = existing["topic"]      # enforce — upsert_version matches on topic
+    return merged
+
 def _parse_frontmatter(text: str) -> tuple[dict, str]:
     """Split YAML frontmatter and body. Returns ({}, text) if no frontmatter."""
     if not text.startswith("---"):
@@ -221,9 +242,7 @@ def _parse_frontmatter(text: str) -> tuple[dict, str]:
     return meta, parts[2].strip()
 
 
-async def _apply_proposals_async(all_proposals: list[dict]) -> None:
-    kb_json = load_kb()
-
+async def _apply_proposals_async(client: Client, all_proposals: list[dict]) -> None:
     for p in all_proposals:
         ptype = p["type"]
         if ptype in ("skill_edit", "new_skill"):
@@ -245,23 +264,28 @@ async def _apply_proposals_async(all_proposals: list[dict]) -> None:
 
         elif ptype == "kb_entry":
             entry = p["entry"]
-            existing_ids = {e["id"] for e in kb_json}
-            if entry.get("id") in existing_ids:
-                entry["id"] = _next_kb_id(kb_json, entry.get("category", "general"))
-            kb_json.append(entry)
-            try:
-                await kb.insert(entry)
-                print(f"  KB entry added: {entry['id']} — {entry.get('topic', '')} (DB + JSON)")
-            except Exception as exc:
-                log.warning("KB DB insert failed: %s — JSON only", exc)
-                print(f"  KB entry added: {entry['id']} — {entry.get('topic', '')} (JSON only)")
+            query = entry.get("question") or entry.get("topic", "")
+            matches = await kb.search(query, top_k=1)
+            if matches and matches[0]["score"] >= KB_SIMILARITY_THRESHOLD:
+                existing = matches[0]
+                print(f"  KB merge: '{entry.get('topic')}' ~ '{existing['topic']}' "
+                      f"(score={existing['score']})")
+                try:
+                    merged = await _merge_kb_entries(client, existing, entry)
+                    new_id = await kb.upsert_version(merged)
+                    print(f"  KB entry merged into: {existing['id']} → v(new id={new_id}) — {merged.get('topic', '')}")
+                except Exception as exc:
+                    log.warning("KB merge failed: %s — skipping entry", exc)
+            else:
+                try:
+                    new_id = await kb.insert(entry)
+                    print(f"  KB entry added: id={new_id} — {entry.get('topic', '')}")
+                except Exception as exc:
+                    log.warning("KB DB insert failed: %s — skipping", exc)
 
-    KB_PATH.write_text(json.dumps(kb_json, indent=2), encoding="utf-8")
-    print(f"  Knowledge base saved to {KB_PATH}")
 
-
-async def apply_proposals(all_proposals: list[dict]) -> None:
-    await _apply_proposals_async(all_proposals)
+async def apply_proposals(client: Client, all_proposals: list[dict]) -> None:
+    await _apply_proposals_async(client, all_proposals)
 
 
 # ── Re-evaluate ──────────────────────────────────────────────────────────────

@@ -185,7 +185,7 @@ async def main():
                         target = p.get("skill_file") or p.get("entry", {}).get("id", "kb")
                         print(f"     {p['type'].upper():12}  {target}  — {p['rationale'][:80]}")
                     if proposals and apply:
-                        await apply_proposals(proposals)
+                        await apply_proposals(client, proposals)
                         all_skills = load_all_skills()
                         kb_entries = load_kb()
                     elif proposals:
