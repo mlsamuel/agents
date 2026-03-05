@@ -12,6 +12,7 @@ Usage:
 """
 
 import logging
+import os
 import sys
 
 # Claim the root logger's handler list with a NullHandler so that
@@ -27,8 +28,10 @@ _root.setLevel(logging.WARNING)
 _handler = logging.StreamHandler(sys.stderr)
 _handler.setFormatter(logging.Formatter("%(levelname)s [%(name)s] %(message)s"))
 
+_level = getattr(logging, os.environ.get("LOG_LEVEL", "INFO").upper(), logging.INFO)
+
 _agents_logger = logging.getLogger("agents")
-_agents_logger.setLevel(logging.DEBUG)
+_agents_logger.setLevel(_level)
 _agents_logger.addHandler(_handler)
 _agents_logger.propagate = False  # don't bubble up to the silenced root
 

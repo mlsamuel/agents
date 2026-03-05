@@ -105,7 +105,6 @@
 - Updated file: `client.py`
 
 **3c. Structured logging**
-- `LOG_LEVEL` env var replaces hardcoded DEBUG (default `INFO`)
 - `RotatingFileHandler` (`agents.log`, 10 MB, 3 backups)
 - Updated file: `logger.py`
 
