@@ -2,7 +2,7 @@
 logger.py - Centralised logging configuration.
 
 Import this module once at the top of each entry-point script (pipeline.py,
-eval_agent.py, classifier_agent.py, mcp_server.py) before any other imports
+mcp_server.py) before any other imports
 that might trigger third-party loggers.
 
 Usage:

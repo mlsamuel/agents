@@ -1,45 +1,31 @@
 """
-improve_agent.py - Eval-driven skill/KB improvement pipeline.
+improver.py - Eval-driven skill/KB improvement helpers.
 
-Reads eval_results.json produced by eval_agent.py, identifies low-scoring emails,
-groups them by skill, and asks Claude Sonnet to propose targeted improvements:
-  - skill_edit: rewrite an existing skill .md
-  - kb_entry:   add an entry to knowledge_base.json
-  - new_skill:  create a new skill .md file
-
-Proposals are always written to improve_proposals.md.
-With --apply: proposals are applied to disk, then the same emails are re-evaluated
-and a before/after score delta is printed.
-
-Usage:
-    python improve_agent.py                    # analyse eval_results.json, min-score 4.0
-    python improve_agent.py --min-score 4.5
-    python improve_agent.py --apply            # apply proposals + re-run eval
-    python improve_agent.py --eval path/to/custom.json
+Public API:
+  load_kb()
+  load_all_skills()
+  generate_proposals(client, skill_name, skill_info, records, kb) → list[dict]
+  apply_proposals(all_proposals)
+  reeval(client, failing) → list[dict]
+  print_delta(before, after)
 """
 
-import argparse
 import asyncio
 import json
-from collections import defaultdict
 from pathlib import Path
 import yaml
 
-from dotenv import load_dotenv
 from client import Client
 from email_stream import email_stream
-from classifier_agent import classify
+from classifier import classify
 from orchestrator_agent import orchestrate
-from eval_agent import judge, _write_output, _write_json
+from evaluator import judge
 from logger import get_logger
 import kb
 import skills as skills_db
 
 log = get_logger(__name__)
 
-load_dotenv()
-
-SKILLS_DIR   = Path(__file__).parent / "skills"
 KB_PATH      = Path(__file__).parent / "data" / "knowledge_base.json"
 IMPROVE_MODEL = "claude-sonnet-4-6"
 
@@ -121,17 +107,12 @@ Propose a new_skill only when the email type is entirely unhandled by any existi
 
 # ── Loaders ─────────────────────────────────────────────────────────────────
 
-def _load_eval(path: str) -> list[dict]:
-    with open(path) as f:
-        return json.load(f)
-
-
-def _load_all_skills() -> dict[str, dict]:
+def load_all_skills() -> dict[str, dict]:
     """Return {skill_name: {queue, types, tools, content}} for all active skills."""
     return skills_db.load_all_sync()
 
 
-def _load_kb() -> list[dict]:
+def load_kb() -> list[dict]:
     with open(KB_PATH) as f:
         return json.load(f)
 
@@ -168,7 +149,7 @@ def _build_examples_text(records: list[dict]) -> str:
     return "\n".join(parts)
 
 
-def _generate_proposals(
+def generate_proposals(
     client: Client,
     skill_name: str,
     skill_info: dict | None,
@@ -205,41 +186,6 @@ def _generate_proposals(
     return data.get("proposals", [])
 
 
-# ── Proposal output ──────────────────────────────────────────────────────────
-
-def _write_proposals(all_proposals: list[dict], path: str = "improve_proposals.md") -> None:
-    lines = [
-        f"# Improvement proposals",
-        f"*{len(all_proposals)} proposal(s)*",
-        "",
-    ]
-    for i, p in enumerate(all_proposals, 1):
-        ptype = p["type"].upper().replace("_", " ")
-        target = p.get("skill_file") or p.get("entry", {}).get("id", "kb")
-        lines += [
-            f"---",
-            f"## Proposal {i} — {ptype}: {target}",
-            f"**Rationale:** {p['rationale']}",
-            "",
-        ]
-        if p["type"] in ("skill_edit", "new_skill"):
-            lines += [
-                "```md",
-                p["new_content"],
-                "```",
-                "",
-            ]
-        else:
-            lines += [
-                "```json",
-                json.dumps(p["entry"], indent=2),
-                "```",
-                "",
-            ]
-    Path(path).write_text("\n".join(lines), encoding="utf-8")
-    print(f"Proposals written to {path}")
-
-
 # ── Apply ────────────────────────────────────────────────────────────────────
 
 def _parse_frontmatter(text: str) -> tuple[dict, str]:
@@ -253,8 +199,8 @@ def _parse_frontmatter(text: str) -> tuple[dict, str]:
     return meta, parts[2].strip()
 
 
-def _apply_proposals(all_proposals: list[dict]) -> None:
-    kb_json = _load_kb()
+def apply_proposals(all_proposals: list[dict]) -> None:
+    kb_json = load_kb()
 
     for p in all_proposals:
         ptype = p["type"]
@@ -295,7 +241,7 @@ def _apply_proposals(all_proposals: list[dict]) -> None:
 
 # ── Re-evaluate ──────────────────────────────────────────────────────────────
 
-def _reeval(client: Client, failing: list[dict]) -> list[dict]:
+def reeval(client: Client, failing: list[dict]) -> list[dict]:
     """Re-run orchestrate + judge for the same emails. Returns full output sections."""
     target_indices = {r["index"] for r in failing}
     updated = []
@@ -347,7 +293,7 @@ def _reeval(client: Client, failing: list[dict]) -> list[dict]:
     return updated
 
 
-def _print_delta(before: list[dict], after: list[dict]) -> None:
+def print_delta(before: list[dict], after: list[dict]) -> None:
     after_map = {r["index"]: r for r in after}
     print("\nBefore / After scores:")
     print(f"{'idx':>4}  {'skill':<22}  {'before':>6}  {'after':>5}  {'delta':>5}")
@@ -363,83 +309,3 @@ def _print_delta(before: list[dict], after: list[dict]) -> None:
         print(f"{idx:>4}  {b.get('skills','?'):<22}  {b['avg']:>6.1f}  {a['avg']:>5.1f}  {sign}{delta:.1f}")
 
 
-# ── Main ─────────────────────────────────────────────────────────────────────
-
-def main():
-    parser = argparse.ArgumentParser()
-    parser.add_argument("--eval",      default="eval_results.json",
-                        help="Path to eval_results.json (default: eval_results.json)")
-    parser.add_argument("--min-score", type=float, default=4.0,
-                        help="Emails with avg below this are considered failures (default: 4.0)")
-    parser.add_argument("--apply",     action="store_true",
-                        help="Apply proposals to disk and re-run eval to measure delta")
-    args = parser.parse_args()
-
-    asyncio.run(kb.get_pool())
-    asyncio.run(skills_db.get_pool())
-
-    client = Client()
-
-    # Step 1: Load & filter
-    print(f"Loading {args.eval} …")
-    records = _load_eval(args.eval)
-    failing = [r for r in records if r["avg"] < args.min_score]
-    print(f"  {len(records)} total records, {len(failing)} below min-score {args.min_score}")
-
-    if not failing:
-        print("All scores above threshold — nothing to improve.")
-        return
-
-    # Step 2: Load context
-    all_skills = _load_all_skills()
-    kb = _load_kb()
-    print(f"  {len(all_skills)} skills loaded, {len(kb)} KB entries loaded")
-
-    # Step 3: Group by skill
-    by_skill: dict[str, list[dict]] = defaultdict(list)
-    for r in failing:
-        skill_name = r.get("skills", "unknown").split(",")[0].strip()
-        by_skill[skill_name].append(r)
-
-    # Step 4: Generate proposals per group
-    all_proposals: list[dict] = []
-    for skill_name, group in by_skill.items():
-        skill_info = all_skills.get(skill_name)
-        print(f"\nAnalysing skill '{skill_name}' ({len(group)} failing email(s)) …")
-        try:
-            proposals = _generate_proposals(client, skill_name, skill_info, group, kb)
-            print(f"  → {len(proposals)} proposal(s)")
-            all_proposals.extend(proposals)
-        except Exception as exc:
-            log.error("Proposal generation failed for skill '%s': %s", skill_name, exc)
-
-    if not all_proposals:
-        print("\nNo proposals generated.")
-        return
-
-    # Step 5: Write proposals
-    print()
-    _write_proposals(all_proposals)
-
-    if not args.apply:
-        print("\nRun with --apply to apply proposals and re-evaluate.")
-        return
-
-    # Step 6: Apply
-    print("\nApplying proposals …")
-    _apply_proposals(all_proposals)
-
-    # Step 7: Re-evaluate
-    print("\nRe-evaluating …")
-    after = _reeval(client, failing)
-    _print_delta(failing, after)
-
-    # Merge refreshed sections back into the full records list and update files
-    after_map = {r["index"]: r for r in after}
-    merged = [after_map.get(r["index"], r) for r in records]
-    _write_json(merged)
-    _write_output(merged)
-
-
-if __name__ == "__main__":
-    main()

@@ -11,7 +11,7 @@ Public sync API (safe to call anywhere, including inside asyncio.run()):
   load_sync(queue)   -> list[dict]   — active skills for a queue (from cache)
   load_all_sync()    -> dict         — all active skills keyed by name (from cache)
 
-Public async API (for improve_agent --apply):
+Public async API (for improver --apply):
   get_pool()                                    — init + seed + cache
   upsert_version(name, queue, types, tools, content) -> int  — new version, deactivates old
   insert_new(name, queue, types, tools, content)             — v1 for a brand-new skill
@@ -139,7 +139,7 @@ def load_sync(queue: str) -> list[dict]:
 
 
 def load_all_sync() -> dict[str, dict]:
-    """Return all active skills as {name: {queue, types, tools, content}} for improve_agent."""
+    """Return all active skills as {name: {queue, types, tools, content}} for improver."""
     out: dict[str, dict] = {}
     for skills_list in _cache.values():
         for s in skills_list:
@@ -152,7 +152,7 @@ def load_all_sync() -> dict[str, dict]:
     return out
 
 
-# ── Async write API (for improve_agent --apply) ───────────────────────────────
+# ── Async write API (for improver --apply) ───────────────────────────────
 
 async def upsert_version(
     name: str, queue: str, types: list, tools: list, content: str
