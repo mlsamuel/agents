@@ -104,7 +104,7 @@ Eval  (default: on)
 Improve  (default: on, requires --eval)
   --improve / --no-improve
   --apply / --no-apply     apply proposals to DB immediately (default: on)
-  --min-score FLOAT        avg score threshold to trigger improve (default: 4.6)
+  --min-score FLOAT        avg score threshold to trigger improve (default: 4.5)
 ```
 
 ### Common invocations

@@ -51,7 +51,7 @@ async def main():
     parser.add_argument("--save",             default=True, action=argparse.BooleanOptionalAction,
                         help="Write eval_output.md when --eval is set (default: true)")
     parser.add_argument("--internal-summary", default=False, action=argparse.BooleanOptionalAction)
-    parser.add_argument("--min-score",        type=float, default=4.6,
+    parser.add_argument("--min-score",        type=float, default=4.5,
                         help="Threshold for failing emails in improve step (default: 4.0)")
     args = parser.parse_args()
 
