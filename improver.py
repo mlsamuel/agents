@@ -160,8 +160,20 @@ def generate_proposals(
     category = QUEUE_TO_KEY.get(records[0]["queue"], "general")
     kb_entries = _kb_for_category(kb, category)
 
-    skill_content = skill_info["content"] if skill_info else "(skill not found)"
-    skill_file    = f"skills/{skill_info['queue']}/{skill_name}.md" if skill_info else f"skills/{category}/{skill_name}.md"
+    if skill_info:
+        fm = (
+            f"---\n"
+            f"name: {skill_name}\n"
+            f"queue: {skill_info['queue']}\n"
+            f"types: {skill_info['types']}\n"
+            f"tools: {skill_info['tools']}\n"
+            f"---\n\n"
+        )
+        skill_content = fm + skill_info["content"]
+        skill_file    = f"skills/{skill_info['queue']}/{skill_name}.md"
+    else:
+        skill_content = "(skill not found)"
+        skill_file    = f"skills/{category}/{skill_name}.md"
 
     kb_summary = [{"id": e["id"], "topic": e["topic"], "question": e["question"]}
                   for e in kb_entries]
@@ -217,7 +229,7 @@ async def _apply_proposals_async(all_proposals: list[dict]) -> None:
         if ptype in ("skill_edit", "new_skill"):
             meta, body = _parse_frontmatter(p["new_content"])
             name  = meta.get("name", "unknown")
-            queue = QUEUE_TO_KEY.get(meta.get("queue", ""), "general")
+            queue = meta.get("queue", "")
             types = meta.get("types", [])
             tools = meta.get("tools", [])
             try:
@@ -248,8 +260,8 @@ async def _apply_proposals_async(all_proposals: list[dict]) -> None:
     print(f"  Knowledge base saved to {KB_PATH}")
 
 
-def apply_proposals(all_proposals: list[dict]) -> None:
-    asyncio.run(_apply_proposals_async(all_proposals))
+async def apply_proposals(all_proposals: list[dict]) -> None:
+    await _apply_proposals_async(all_proposals)
 
 
 # ── Re-evaluate ──────────────────────────────────────────────────────────────

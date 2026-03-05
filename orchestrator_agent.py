@@ -171,16 +171,16 @@ def _merge(
 
 # ── Public API ─────────────────────────────────────────────────────────────────
 
-def orchestrate(classification: dict, email: dict) -> OrchestratorResult:
+async def orchestrate(classification: dict, email: dict) -> OrchestratorResult:
     client = Client()
 
     # Step 1
     plan = _decompose(client, email, classification)
 
     # Step 2
-    results = asyncio.run(_fan_out(
+    results = await _fan_out(
         plan["agents"], email, classification, plan["parallel"]
-    ))
+    )
 
     # Step 3
     final_reply = _merge(client, email, results)
