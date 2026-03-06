@@ -67,13 +67,17 @@ cp .env.example .env
 # edit .env — required:
 #   ANTHROPIC_API_KEY=...
 #   DATABASE_URL=postgresql://user:pass@host/dbname
+#
+# optional (defaults shown):
+#   MCP_PORT=8765          — port the MCP server binds to
+#   MCP_SERVER_URL=http://127.0.0.1:8765/mcp  — URL workflow agents connect to
 ```
 
 The database schema (tables, HNSW index) is created automatically on first run. Seed data is loaded from `data/knowledge_base.json` and `skills/**/*.md` if the tables are empty.
 
-**3. Docker sandbox (optional)**
+**3. Docker sandbox (required for `run_code`)**
 
-`run_code` executes agent-generated Python in a Docker container for isolation. Without Docker it falls back to in-process execution automatically.
+`run_code` executes agent-generated Python in a Docker container for isolation. Without Docker, `run_code` calls return an error and the agent cannot use that tool.
 
 ```bash
 docker pull python:3.12-slim
