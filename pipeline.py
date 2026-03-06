@@ -24,7 +24,6 @@ from input_screener import screen_email
 from email_sanitizer import sanitize
 from evaluator import judge, init_output, append_section
 from improver import (
-    load_kb,
     load_all_skills,
     generate_proposals,
     apply_proposals,
@@ -69,7 +68,6 @@ async def main():
     output_sections: list[dict] = []
 
     all_skills = load_all_skills() if run_improve else {}
-    kb_entries = load_kb()         if run_improve else []
 
     mode_tag = "EVAL" if run_eval else ""
     if run_improve:
@@ -185,15 +183,14 @@ async def main():
                 skill_info = all_skills.get(skill_name)
                 print(f"  [improve]     analysing skill '{skill_name}' …")
                 try:
-                    proposals = generate_proposals(client, skill_name, skill_info, [section], kb_entries)
+                    proposals = generate_proposals(client, skill_name, skill_info, section)
                     print(f"  [improve]     {len(proposals)} proposal(s)")
                     for p in proposals:
-                        target = p.get("skill_file") or p.get("entry", {}).get("id", "kb")
+                        target = p.get("entry", {}).get("topic", skill_name)
                         print(f"     {p['type'].upper():12}  {target}  — {p['rationale'][:80]}")
                     if proposals and apply:
                         await apply_proposals(client, proposals)
                         all_skills = load_all_skills()
-                        kb_entries = load_kb()
                     elif proposals:
                         print("  [improve]     --no-apply: proposals not written to DB")
                 except Exception as exc:

@@ -2,17 +2,15 @@
 improver.py - Eval-driven skill/KB improvement helpers.
 
 Public API:
-  load_kb()
   load_all_skills()
-  generate_proposals(client, skill_name, skill_info, records, kb) → list[dict]
-  apply_proposals(all_proposals)
+  generate_proposals(client, skill_name, skill_info, record) → list[dict]
+  apply_proposals(client, all_proposals)
   reeval(client, failing) → list[dict]
   print_delta(before, after)
 """
 
 import asyncio
 import json
-from pathlib import Path
 import yaml
 
 from client import Client
@@ -26,7 +24,6 @@ import skills as skills_db
 
 log = get_logger(__name__)
 
-KB_PATH      = Path(__file__).parent / "data" / "knowledge_base.json"
 IMPROVE_MODEL = "claude-sonnet-4-6"
 MERGE_MODEL   = "claude-haiku-4-5-20251001"
 MERGE_SYSTEM  = """\
@@ -38,15 +35,6 @@ Respond with JSON only, no markdown wrapper, matching this exact schema:
 """
 KB_SIMILARITY_THRESHOLD = 0.90
 
-QUEUE_TO_KEY = {
-    "Technical Support":              "technical_support",
-    "Billing and Payments":           "billing",
-    "Returns and Exchanges":          "returns",
-    "Sales and Pre-Sales":            "general",
-    "General":                        "general",
-    "IT Support":                     "technical_support",
-    "Service Outages and Maintenance":"technical_support",
-}
 
 IMPROVE_SYSTEM = """\
 You are an expert at improving customer support AI agent skills.
@@ -55,7 +43,6 @@ You will receive:
 1. A skill .md file (full content) used by an agent to handle support emails
 2. One or more examples where the agent scored below threshold, with scores,
    eval comments, ground truth replies, and the agent's generated replies
-3. The current knowledge base entries for this category
 
 ## Decision rules — apply in order
 
@@ -87,7 +74,6 @@ Propose a new_skill only when the email type is entirely unhandled by any existi
   "proposals": [
     {
       "type": "skill_edit",
-      "skill_file": "skills/general/general_inquiry.md",
       "rationale": "one sentence explaining why",
       "new_content": "--- full .md content here ---"
     },
@@ -104,7 +90,6 @@ Propose a new_skill only when the email type is entirely unhandled by any existi
     },
     {
       "type": "new_skill",
-      "skill_file": "skills/general/new_skill.md",
       "rationale": "one sentence explaining why",
       "new_content": "--- full .md content here ---"
     }
@@ -120,44 +105,28 @@ def load_all_skills() -> dict[str, dict]:
     return skills_db.load_all_sync()
 
 
-def load_kb() -> list[dict]:
-    with open(KB_PATH) as f:
-        return json.load(f)
-
-
-def _kb_for_category(kb: list[dict], category: str) -> list[dict]:
-    return [e for e in kb if e.get("category") == category]
-
-
 
 # ── Proposal generation ──────────────────────────────────────────────────────
 
-def _build_examples_text(records: list[dict]) -> str:
-    parts = []
-    for r in records:
-        s = r["score"]
-        parts.append(
-            f"--- Example [{r['index']}]: {r['subject']} ---\n"
-            f"Scores: action={s['action']}/5  completeness={s['completeness']}/5"
-            f"  tone={s['tone']}/5  avg={r['avg']:.1f}\n"
-            f"Eval comment: {s['comment']}\n\n"
-            f"Ground truth reply:\n{r['ground_truth'][:800]}\n\n"
-            f"Generated reply:\n{r['generated'][:800]}\n"
-        )
-    return "\n".join(parts)
+def _example_text(r: dict) -> str:
+    s = r["score"]
+    return (
+        f"Subject: {r['subject']}\n"
+        f"Scores: action={s['action']}/5  completeness={s['completeness']}/5"
+        f"  tone={s['tone']}/5  avg={r['avg']:.1f}\n"
+        f"Eval comment: {s['comment']}\n\n"
+        f"Ground truth reply:\n{r['ground_truth'][:800]}\n\n"
+        f"Generated reply:\n{r['generated'][:800]}"
+    )
 
 
 def generate_proposals(
     client: Client,
     skill_name: str,
     skill_info: dict | None,
-    records: list[dict],
-    kb: list[dict],
+    record: dict,
 ) -> list[dict]:
-    """Call Claude to generate improvement proposals for one skill group."""
-    category = QUEUE_TO_KEY.get(records[0]["queue"], "general")
-    kb_entries = _kb_for_category(kb, category)
-
+    """Call Claude to generate improvement proposals for a failing email."""
     if skill_info:
         fm = (
             f"---\n"
@@ -168,27 +137,20 @@ def generate_proposals(
             f"---\n\n"
         )
         skill_content = fm + skill_info["content"]
-        skill_file    = f"skills/{skill_info['queue']}/{skill_name}.md"
     else:
         skill_content = "(skill not found)"
-        skill_file    = f"skills/{category}/{skill_name}.md"
-
-    kb_summary = [{"id": e["id"], "topic": e["topic"], "question": e["question"]}
-                  for e in kb_entries]
 
     user_msg = (
-        f"## Skill file: {skill_file}\n\n"
+        f"## Skill: {skill_name}\n\n"
         f"```\n{skill_content}\n```\n\n"
-        f"## Failing examples (avg < threshold)\n\n"
-        f"{_build_examples_text(records)}\n\n"
-        f"## Existing knowledge base entries (category: {category}) — id, topic, question only\n\n"
-        f"```json\n{json.dumps(kb_summary, indent=2)}\n```\n\n"
+        f"## Failing example\n\n"
+        f"{_example_text(record)}\n\n"
         f"Propose improvements. Remember: respond with JSON only."
     )
 
     response = client.messages.create(
         model=IMPROVE_MODEL,
-        max_tokens=16000,
+        max_tokens=4000,
         system=IMPROVE_SYSTEM,
         messages=[{"role": "user", "content": user_msg}],
     )
