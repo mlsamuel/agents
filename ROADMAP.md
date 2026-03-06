@@ -7,7 +7,7 @@
 | # | Shortcut | Current state | Consequence |
 |---|----------|--------------|-------------|
 | D1 | **All backend data is mocked** | `mcp_server.py` generates deterministic fake customers/tickets/orders from hashed keywords. | Nothing persists. No real support history. |
-| D4 | **Embeddings computed in-process** | `fastembed` (`all-MiniLM-L6-v2`) runs inside the pipeline process. | Slow cold start on first embed. Lower retrieval quality than purpose-built models. |
+| D4 | **Generic embedding model** | `fastembed` (`all-MiniLM-L6-v2`) used for KB and guideline search. | Lower retrieval quality than purpose-built models (VoyageAI, Cohere, OpenAI). |
 
 ### Improve agent gaps
 
