@@ -13,6 +13,12 @@ Usage:
 """
 
 import argparse
+import os
+import socket
+import subprocess
+import sys
+import time
+from pathlib import Path
 
 from dotenv import load_dotenv
 from client import Client
@@ -32,6 +38,20 @@ import kb
 import skills as skills_db
 
 load_dotenv()
+
+_MCP_SERVER = Path(__file__).parent / "mcp_server.py"
+_MCP_PORT   = int(os.environ.get("MCP_PORT", "8765"))
+
+
+def _wait_for_mcp(host: str, port: int, timeout: float = 10.0) -> None:
+    deadline = time.time() + timeout
+    while time.time() < deadline:
+        try:
+            with socket.create_connection((host, port), timeout=1):
+                return
+        except OSError:
+            time.sleep(0.1)
+    raise RuntimeError(f"MCP server did not start on {host}:{port} within {timeout}s")
 
 
 async def main():
@@ -64,6 +84,13 @@ async def main():
     await kb.get_pool()
     await skills_db.get_pool()
 
+    mcp_proc = subprocess.Popen(
+        [sys.executable, str(_MCP_SERVER), "--transport", "streamable-http"],
+        env={**os.environ},
+    )
+    _wait_for_mcp("127.0.0.1", _MCP_PORT)
+    print(f"MCP server started (pid={mcp_proc.pid}, port={_MCP_PORT})\n")
+
     client = Client()
     output_sections: list[dict] = []
 
@@ -82,124 +109,129 @@ async def main():
     if run_eval and args.save:
         init_output(out_path)
 
-    for i, email in enumerate(
-        email_stream(language=args.language, limit=args.limit,
-                     offset=args.offset, shuffle=args.shuffle),
-        args.offset + 1,
-    ):
-        subject = email.get("subject") or "(no subject)"
-        print(f"\n EMAIL: {subject[:65]}")
-        print("-" * 70)
+    try:
+        for i, email in enumerate(
+            email_stream(language=args.language, limit=args.limit,
+                         offset=args.offset, shuffle=args.shuffle),
+            args.offset + 1,
+        ):
+            subject = email.get("subject") or "(no subject)"
+            print(f"\n EMAIL: {subject[:65]}")
+            print("-" * 70)
 
-        try:
-            # Screen
-            if args.screen:
-                screen = screen_email(client, email)
-                if not screen.safe:
-                    print(f"  [screener]    QUARANTINED (score={screen.risk_score}/10) — {screen.reason}")
+            try:
+                # Screen
+                if args.screen:
+                    screen = screen_email(client, email)
+                    if not screen.safe:
+                        print(f"  [screener]    QUARANTINED (score={screen.risk_score}/10) — {screen.reason}")
+                        print("=" * 70)
+                        continue
+                    if screen.risk_score >= 3:
+                        print(f"  [screener]    warning score={screen.risk_score}/10 — {screen.reason}")
+
+                # Sanitize
+                email, warnings = sanitize(email)
+                if warnings:
+                    print(f"  [sanitizer]   stripped {len(warnings)} pattern(s)")
+
+                # Classify
+                classification = classify(client, email)
+                print(f"  [classifier]  queue={classification['queue']}  "
+                      f"priority={classification['priority']}  type={classification['type']}")
+                print(f"                reason: {classification['reason']}")
+
+                # Orchestrate
+                result = await orchestrate(classification, email)
+                multi = len(result.agents_used) > 1
+                print(f"  [orchestrator] agents={result.agents_used}  "
+                      f"{'MULTI-AGENT  ' if multi else ''}"
+                      f"action={result.action}  escalated={result.escalated}")
+
+                skills_str = ", ".join(sub.skill_used for sub in result.results)
+                all_tools  = [c["tool"] for sub in result.results for c in sub.tool_calls]
+                tools_str  = ", ".join(all_tools) if all_tools else "(none)"
+
+                for sub in result.results:
+                    print(f"    ↳ [{sub.skill_used}]  ticket={sub.ticket_id or '(none)'}  "
+                          f"tools={[c['tool'] for c in sub.tool_calls]}")
+
+                if result.ticket_ids:
+                    print(f"  [tickets]     {', '.join(result.ticket_ids)}")
+
+                if result.final_reply:
+                    preview = result.final_reply.replace("\n", " ")[:220]
+                    print(f"  [final reply] {preview}...")
+
+                if not run_eval:
                     print("=" * 70)
                     continue
-                if screen.risk_score >= 3:
-                    print(f"  [screener]    warning score={screen.risk_score}/10 — {screen.reason}")
 
-            # Sanitize
-            email, warnings = sanitize(email)
-            if warnings:
-                print(f"  [sanitizer]   stripped {len(warnings)} pattern(s)")
+                # Eval
+                ground_truth = email.get("answer") or ""
+                if not ground_truth:
+                    print("  [eval]        skipped — no ground truth")
+                    print("=" * 70)
+                    continue
 
-            # Classify
-            classification = classify(client, email)
-            print(f"  [classifier]  queue={classification['queue']}  "
-                  f"priority={classification['priority']}  type={classification['type']}")
-            print(f"                reason: {classification['reason']}")
+                generated = result.final_reply or ""
+                if not generated:
+                    print("  [eval]        skipped — no reply generated")
+                    print("=" * 70)
+                    continue
 
-            # Orchestrate
-            result = await orchestrate(classification, email)
-            multi = len(result.agents_used) > 1
-            print(f"  [orchestrator] agents={result.agents_used}  "
-                  f"{'MULTI-AGENT  ' if multi else ''}"
-                  f"action={result.action}  escalated={result.escalated}")
+                score = judge(client, email, ground_truth, generated)
+                avg   = (score["action"] + score["completeness"] + score["tone"]) / 3
+                print(f"  [eval]        action={score['action']}/5  completeness={score['completeness']}/5  "
+                      f"tone={score['tone']}/5  avg={avg:.1f}  comment: {score['comment']}")
 
-            skills_str = ", ".join(sub.skill_used for sub in result.results)
-            all_tools  = [c["tool"] for sub in result.results for c in sub.tool_calls]
-            tools_str  = ", ".join(all_tools) if all_tools else "(none)"
+                internal_summary = result.results[0].internal_summary if result.results else ""
+                section = {
+                    "index":            i,
+                    "subject":          subject,
+                    "body":             email.get("body") or "",
+                    "queue":            classification["queue"],
+                    "type":             classification["type"],
+                    "priority":         classification["priority"],
+                    "skills":           skills_str,
+                    "tools":            tools_str,
+                    "ground_truth":     ground_truth,
+                    "generated":        generated,
+                    "internal_summary": internal_summary,
+                    "score":            score,
+                    "avg":              avg,
+                }
+                output_sections.append(section)
+                if args.save:
+                    append_section(section, out_path, include_internal_summary=args.internal_summary)
 
-            for sub in result.results:
-                print(f"    ↳ [{sub.skill_used}]  ticket={sub.ticket_id or '(none)'}  "
-                      f"tools={[c['tool'] for c in sub.tool_calls]}")
+                # Improve
+                if run_improve and avg < args.min_score:
+                    skill_name = skills_str.split(",")[0].strip()
+                    skill_info = all_skills.get(skill_name)
+                    print(f"  [improve]     analysing skill '{skill_name}' …")
+                    try:
+                        proposals = generate_proposals(client, skill_name, skill_info, section)
+                        print(f"  [improve]     {len(proposals)} proposal(s)")
+                        for p in proposals:
+                            target = p.get("entry", {}).get("topic", skill_name)
+                            print(f"     {p['type'].upper():12}  {target}  — {p['rationale'][:80]}")
+                        if proposals and apply:
+                            await apply_proposals(client, proposals)
+                            all_skills = load_all_skills()
+                        elif proposals:
+                            print("  [improve]     --no-apply: proposals not written to DB")
+                    except Exception as exc:
+                        print(f"  [improve]     error: {exc}")
 
-            if result.ticket_ids:
-                print(f"  [tickets]     {', '.join(result.ticket_ids)}")
+            except Exception as exc:
+                print(f"  [error]       {exc}")
 
-            if result.final_reply:
-                preview = result.final_reply.replace("\n", " ")[:220]
-                print(f"  [final reply] {preview}...")
+            print("=" * 70)
 
-            if not run_eval:
-                print("=" * 70)
-                continue
-
-            # Eval
-            ground_truth = email.get("answer") or ""
-            if not ground_truth:
-                print("  [eval]        skipped — no ground truth")
-                print("=" * 70)
-                continue
-
-            generated = result.final_reply or ""
-            if not generated:
-                print("  [eval]        skipped — no reply generated")
-                print("=" * 70)
-                continue
-
-            score = judge(client, email, ground_truth, generated)
-            avg   = (score["action"] + score["completeness"] + score["tone"]) / 3
-            print(f"  [eval]        action={score['action']}/5  completeness={score['completeness']}/5  "
-                  f"tone={score['tone']}/5  avg={avg:.1f}  comment: {score['comment']}")
-
-            internal_summary = result.results[0].internal_summary if result.results else ""
-            section = {
-                "index":            i,
-                "subject":          subject,
-                "body":             email.get("body") or "",
-                "queue":            classification["queue"],
-                "type":             classification["type"],
-                "priority":         classification["priority"],
-                "skills":           skills_str,
-                "tools":            tools_str,
-                "ground_truth":     ground_truth,
-                "generated":        generated,
-                "internal_summary": internal_summary,
-                "score":            score,
-                "avg":              avg,
-            }
-            output_sections.append(section)
-            if args.save:
-                append_section(section, out_path, include_internal_summary=args.internal_summary)
-
-            # Improve
-            if run_improve and avg < args.min_score:
-                skill_name = skills_str.split(",")[0].strip()
-                skill_info = all_skills.get(skill_name)
-                print(f"  [improve]     analysing skill '{skill_name}' …")
-                try:
-                    proposals = generate_proposals(client, skill_name, skill_info, section)
-                    print(f"  [improve]     {len(proposals)} proposal(s)")
-                    for p in proposals:
-                        target = p.get("entry", {}).get("topic", skill_name)
-                        print(f"     {p['type'].upper():12}  {target}  — {p['rationale'][:80]}")
-                    if proposals and apply:
-                        await apply_proposals(client, proposals)
-                        all_skills = load_all_skills()
-                    elif proposals:
-                        print("  [improve]     --no-apply: proposals not written to DB")
-                except Exception as exc:
-                    print(f"  [improve]     error: {exc}")
-
-        except Exception as exc:
-            print(f"  [error]       {exc}")
-
-        print("=" * 70)
+    finally:
+        mcp_proc.terminate()
+        mcp_proc.wait()
 
     if not run_eval:
         return

@@ -35,7 +35,8 @@ from mcp.server.fastmcp import FastMCP
 
 import kb
 
-mcp = FastMCP("SupportBackend")
+MCP_PORT = int(os.environ.get("MCP_PORT", "8765"))
+mcp = FastMCP("SupportBackend", port=MCP_PORT, streamable_http_path="/mcp")
 
 # ── helpers ────────────────────────────────────────────────────────────────────
 
@@ -366,4 +367,8 @@ def _run_code_docker(code: str, allowed_tools: list[str], timeout: int) -> dict:
 
 
 if __name__ == "__main__":
-    mcp.run(transport="stdio")
+    import argparse
+    p = argparse.ArgumentParser()
+    p.add_argument("--transport", default="stdio", choices=["stdio", "streamable-http"])
+    args = p.parse_args()
+    mcp.run(transport=args.transport)

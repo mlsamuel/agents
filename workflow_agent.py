@@ -12,15 +12,13 @@ Each WorkflowAgent:
 
 import asyncio
 import json
-import sys
 import os
 import re
 from dataclasses import dataclass, field
-from pathlib import Path
 
 from dotenv import load_dotenv
 from mcp import ClientSession
-from mcp.client.stdio import stdio_client, StdioServerParameters
+from mcp.client.streamable_http import streamablehttp_client
 
 from client import Client
 from logger import get_logger
@@ -29,8 +27,7 @@ log = get_logger(__name__)
 
 load_dotenv()
 
-MCP_SERVER = Path(__file__).parent / "mcp_server.py"
-PYTHON = sys.executable
+MCP_SERVER_URL = os.environ.get("MCP_SERVER_URL", "http://127.0.0.1:8765/mcp")
 
 SELECTOR_MODEL = "claude-haiku-4-5-20251001"
 WORKFLOW_MODEL = "claude-sonnet-4-6"
@@ -134,13 +131,7 @@ async def _run_workflow(
     email: dict,
     classification: dict,
 ) -> WorkflowResult:
-    server_params = StdioServerParameters(
-        command=PYTHON,
-        args=[str(MCP_SERVER)],
-        env={**os.environ},
-    )
-
-    async with stdio_client(server_params) as (read, write):
+    async with streamablehttp_client(MCP_SERVER_URL) as (read, write, _):
         async with ClientSession(read, write) as session:
             await session.initialize()
 

@@ -22,7 +22,6 @@
 
 | # | Shortcut | Current state | Consequence |
 |---|----------|--------------|-------------|
-| A1 | **New MCP subprocess per request** | `workflow_agent.py` spawns a fresh `mcp_server.py` process per email. | High latency, wasted compute, no connection pooling. |
 | A2 | **Max tool turns is a global constant** | `MAX_TOOL_TURNS = 8` hardcoded. | Can't tune per skill, no adaptive termination. |
 | A3 | **Email body hard-truncated at 2000 chars** | Simple slice in `workflow_agent.py`. | Long technical emails lose critical context. |
 | A4 | **No cost tracking** | No visibility into per-run API spend. | Can't budget or optimize model selection. |
@@ -73,19 +72,13 @@
 
 ### Phase 3 — Architecture cleanup
 
-**3a. Long-lived MCP server** — *fixes A1*
-- Move MCP transport from stdio subprocess → HTTP (SSE or streamable-HTTP)
-- MCP server runs as a persistent service; `workflow_agent.py` connects as a client
-- Eliminates per-request subprocess spawn, KB reload, embedding model init
-- Updated files: `mcp_server.py`, `workflow_agent.py`
-
-**3b. Cost tracking** — *fixes A4*
+**3a. Cost tracking** — *fixes A4*
 - Instrument `Client._Messages.create()` to extract `usage.input_tokens + output_tokens`
 - Compute cost using a model pricing table in `client.py`
 - Print per-run cost summary at end of pipeline run
 - Updated file: `client.py`
 
-**3c. Structured logging**
+**3b. Structured logging**
 - `RotatingFileHandler` (`agents.log`, 10 MB, 3 backups)
 - Updated file: `logger.py`
 
@@ -99,8 +92,7 @@ Next      Phase 1a  Postgres for backend data (customers, tickets, orders)
 Month 1   Phase 2   Improve agent: regression testing, new_tool proposals,
                     git integration, experiment log
 
-Month 2   Phase 3a  Long-lived MCP server (HTTP transport)
-Ongoing   Phase 3bc Cost tracking, structured logging
+Ongoing   Phase 3ab Cost tracking, structured logging
 ```
 
 ---
@@ -109,10 +101,9 @@ Ongoing   Phase 3bc Cost tracking, structured logging
 
 | File | What changes |
 |------|-------------|
-| `mcp_server.py` | Phase 1a: Postgres queries; Phase 2b: tool registry; Phase 3a: HTTP transport |
-| `workflow_agent.py` | Phase 3a: HTTP MCP client |
+| `mcp_server.py` | Phase 1a: Postgres queries; Phase 2b: tool registry |
 | `improver.py` | Phase 2a: regression gate; Phase 2b: new_tool proposals; Phase 2c: git branch workflow; Phase 2d: experiment log |
 | `evaluator.py` | Phase 2d: experiment log baseline |
-| `client.py` | Phase 3b: cost tracking |
-| `logger.py` | Phase 3c: RotatingFileHandler |
+| `client.py` | Phase 3a: cost tracking |
+| `logger.py` | Phase 3b: RotatingFileHandler |
 | NEW `db.py` | Phase 1a: asyncpg pool, schema, query helpers for customers/tickets/orders |
