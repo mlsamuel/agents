@@ -71,11 +71,10 @@ async def _seed(conn: asyncpg.Connection) -> None:
 
     rows = []
     for md in sorted(_SKILLS_DIR.glob("**/*.md")):
-        agent = md.parent.name   # directory name = agent key (e.g. "billing")
         meta, body = _parse_frontmatter(md.read_text())
         rows.append((
             meta.get("name", md.stem),
-            agent,
+            meta["agent"],
             meta.get("types", []),
             meta.get("tools", []),
             body,

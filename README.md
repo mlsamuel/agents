@@ -199,4 +199,4 @@ tools: [lookup_customer, check_order_status, process_refund, send_reply]
 You are a refund specialist...
 ```
 
-`agent` must match one of the four agent keys: `billing`, `returns`, `technical_support`, `general`. It is documentation only — at runtime the agent key comes from the directory name (`billing/`, `returns/`, etc.), not this field. `types` and `tools` are stored in the DB and used for routing and tool filtering respectively. The improver can update skills in-place (new versioned row, old row deactivated) without touching the seed files.
+`agent` must be one of `billing`, `returns`, `technical_support`, `general`. `types` and `tools` are stored in the DB and used for routing and tool filtering. The improver can update skills in-place (new versioned row, old row deactivated) without touching the seed files.
