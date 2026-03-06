@@ -1,10 +1,12 @@
 """
-kb.py — Knowledge base and agent guidelines backed by pgvector.
+store.py — Knowledge base, agent guidelines, and regression training set backed by pgvector.
 
 On first call to get_pool():
   - Connects to DATABASE_URL
-  - Creates knowledge_base + agent_guidelines tables + HNSW indexes if not present
-  - Seeds knowledge_base from data/knowledge_base.json if the table is empty
+  - Creates tables + HNSW indexes if not present
+  - Seeds knowledge_base from data/knowledge_base.json if empty
+  - Seeds agent_guidelines from data/agent_guidelines.json if empty
+  - Seeds training_set from data/training_set.json if empty
 
 Public API (knowledge base):
   search(query, category, top_k)    -> list[dict]
@@ -15,6 +17,10 @@ Public API (agent guidelines):
   search_guideline(query, category, top_k) -> list[dict]
   insert_guideline(entry)                  -> int
   upsert_guideline_version(entry)          -> int
+
+Public API (regression training set):
+  get_training(skill_name)                          -> list[dict]
+  add_training_email(skill_name, subject, body, answer) -> bool
 """
 
 import json
@@ -32,7 +38,12 @@ log = get_logger(__name__)
 
 _pool: asyncpg.Pool | None = None
 _model: TextEmbedding | None = None
-_KB_JSON = Path(__file__).parent / "data" / "knowledge_base.json"
+_KB_JSON          = Path(__file__).parent / "data" / "knowledge_base.json"
+_GUIDELINES_JSON  = Path(__file__).parent / "data" / "agent_guidelines.json"
+_TRAINING_JSON    = Path(__file__).parent / "data" / "training_set.json"
+
+REGRESSION_THRESHOLD = 3.5
+MAX_PER_SKILL        = 3
 
 _SCHEMA = """
 CREATE EXTENSION IF NOT EXISTS vector;
@@ -70,6 +81,15 @@ CREATE TABLE IF NOT EXISTS agent_guidelines (
 
 CREATE INDEX IF NOT EXISTS agent_guidelines_embedding_idx
     ON agent_guidelines USING hnsw (embedding vector_cosine_ops);
+
+CREATE TABLE IF NOT EXISTS training_set (
+    id         SERIAL PRIMARY KEY,
+    skill_name TEXT NOT NULL,
+    subject    TEXT NOT NULL,
+    body       TEXT NOT NULL,
+    answer     TEXT NOT NULL,
+    created_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
+);
 """
 
 
@@ -114,6 +134,57 @@ async def _seed(conn: asyncpg.Connection) -> None:
     log.info("kb: seeded %d entries from %s", len(rows), _KB_JSON)
 
 
+async def _seed_guidelines(conn: asyncpg.Connection) -> None:
+    count = await conn.fetchval("SELECT COUNT(*) FROM agent_guidelines")
+    if count > 0:
+        log.debug("kb: %d guidelines already in DB, skipping seed", count)
+        return
+
+    if not _GUIDELINES_JSON.exists():
+        return
+
+    entries = json.loads(_GUIDELINES_JSON.read_text())
+    if not entries:
+        return
+
+    model = _get_model()
+    embeddings = list(model.embed([e["trigger"] for e in entries]))
+    rows = [
+        (
+            e["category"], e["topic"], e["trigger"], e["instruction"],
+            e.get("keywords", []), _to_vec_str(embeddings[i]),
+        )
+        for i, e in enumerate(entries)
+    ]
+    await conn.executemany(
+        """INSERT INTO agent_guidelines
+               (category, topic, trigger, instruction, keywords, embedding)
+           VALUES ($1, $2, $3, $4, $5, $6::vector)
+           ON CONFLICT (topic, version) DO NOTHING""",
+        rows,
+    )
+    log.info("kb: seeded %d guidelines from %s", len(rows), _GUIDELINES_JSON)
+
+
+async def _seed_training(conn: asyncpg.Connection) -> None:
+    count = await conn.fetchval("SELECT COUNT(*) FROM training_set")
+    if count > 0:
+        log.debug("kb: %d training emails already in DB, skipping seed", count)
+        return
+
+    data = json.loads(_TRAINING_JSON.read_text())
+    rows = []
+    for skill_name, emails in data.items():
+        for e in emails:
+            rows.append((skill_name, e["subject"], e["body"], e["answer"]))
+    if rows:
+        await conn.executemany(
+            "INSERT INTO training_set (skill_name, subject, body, answer) VALUES ($1, $2, $3, $4)",
+            rows,
+        )
+    log.info("kb: seeded %d training emails from %s", len(rows), _TRAINING_JSON)
+
+
 async def get_pool() -> asyncpg.Pool:
     global _pool
     if _pool is not None:
@@ -127,6 +198,8 @@ async def get_pool() -> asyncpg.Pool:
     async with _pool.acquire() as conn:
         await conn.execute(_SCHEMA)
         await _seed(conn)
+        await _seed_guidelines(conn)
+        await _seed_training(conn)
     log.info("kb: pool ready")
     return _pool
 
@@ -309,3 +382,36 @@ async def upsert_guideline_version(entry: dict) -> int:
             )
     log.info("kb: upserted guideline '%s' → v%d (id=%d)", entry.get("topic", ""), new_ver, new_id)
     return new_id
+
+
+# ── Regression training set ───────────────────────────────────────────────────
+
+async def get_training(skill_name: str) -> list[dict]:
+    """Return all training emails for a skill (up to MAX_PER_SKILL)."""
+    pool = await get_pool()
+    async with pool.acquire() as conn:
+        rows = await conn.fetch(
+            "SELECT subject, body, answer FROM training_set WHERE skill_name = $1",
+            skill_name,
+        )
+    return [{"subject": r["subject"], "body": r["body"], "answer": r["answer"]} for r in rows]
+
+
+async def add_training_email(skill_name: str, subject: str, body: str, answer: str) -> bool:
+    """Add an email to the training set for skill_name if there is room.
+
+    Returns True if added, False if the skill already has MAX_PER_SKILL entries.
+    """
+    pool = await get_pool()
+    async with pool.acquire() as conn:
+        count = await conn.fetchval(
+            "SELECT COUNT(*) FROM training_set WHERE skill_name = $1", skill_name
+        )
+        if count >= MAX_PER_SKILL:
+            return False
+        await conn.execute(
+            "INSERT INTO training_set (skill_name, subject, body, answer) VALUES ($1, $2, $3, $4)",
+            skill_name, subject, body, answer,
+        )
+    log.info("kb: added training email for '%s' (slot %d/%d)", skill_name, count + 1, MAX_PER_SKILL)
+    return True

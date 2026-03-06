@@ -14,7 +14,7 @@
 | # | Shortcut | Current state | Consequence |
 |---|----------|--------------|-------------|
 | I1 | **Can't propose new MCP tools** | `IMPROVE_SYSTEM` only knows `skill_edit`, `kb_entry`, `new_skill`. | If an email fails because a needed tool doesn't exist, rewriting the skill won't help. |
-| I2 | **No regression testing** | `--apply` re-evals only the *failing* emails. | A skill change that fixes email #3 can break email #7 — undetected. |
+| ~~I2~~ | ~~**No regression testing**~~ | Fixed — `training_set` DB table seeded from `data/training_set.json`; after each `--apply`, training emails for the affected skill are re-evaluated and a warning is printed if any drop below avg 3.5. | — |
 | I3 | **No approval gate or rollback via git** | Proposals write versioned rows to Postgres immediately. Old versions retained with `is_active = false` but no git branch workflow. | A bad proposal can only be rolled back by manually reactivating the previous DB version. |
 | I4 | **No baseline / experiment tracking** | Eval scores written to `eval_output.md` but no history across runs. | Can't detect gradual drift or measure cumulative improvement. |
 
@@ -40,12 +40,6 @@
 ---
 
 ### Phase 2 — Improve agent completeness
-
-**2a. Regression testing** — *fixes I2*
-- After `--apply`, re-eval **all** emails for the affected skill(s), not just the failing ones
-- If any previously-passing email drops > 0.5 avg points: warn and require `--force`
-- Flag: `--regression` (default on when `--apply` is used)
-- Updated file: `improver.py`
 
 **2b. `new_tool` proposal type** — *fixes I1*
 - Add a tool registry to `mcp_server.py` (tool names, signatures, descriptions)
@@ -101,7 +95,9 @@ Ongoing   Phase 3ab Cost tracking, structured logging
 | File | What changes |
 |------|-------------|
 | `mcp_server.py` | Phase 1a: Postgres queries; Phase 2b: tool registry |
-| `improver.py` | Phase 2a: regression gate; Phase 2b: new_tool proposals; Phase 2c: git branch workflow; Phase 2d: experiment log |
+| `improver.py` | Phase 2b: new_tool proposals; Phase 2d: experiment log |
+| `kb.py` | I2: training_set table, get_training, add_training_email |
+| `pipeline.py` | I2: post-apply regression run |
 | `evaluator.py` | Phase 2d: experiment log baseline |
 | `client.py` | Phase 3a: cost tracking |
 | `logger.py` | Phase 3b: RotatingFileHandler |

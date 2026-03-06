@@ -34,7 +34,7 @@ from improver import (
     generate_proposals,
     apply_proposals,
 )
-import kb
+import store as kb
 import skills as skills_db
 
 load_dotenv()
@@ -95,6 +95,13 @@ async def main():
     output_sections: list[dict] = []
 
     all_skills = load_all_skills() if run_improve else {}
+
+    # Run-level improvement counters
+    tally: dict[str, int] = {
+        "skill_edit": 0, "new_skill": 0,
+        "kb_entry": 0, "agent_guideline": 0,
+        "training_added": 0,
+    }
 
     mode_tag = "EVAL" if run_eval else ""
     if run_improve:
@@ -219,6 +226,38 @@ async def main():
                         if proposals and apply:
                             await apply_proposals(client, proposals)
                             all_skills = load_all_skills()
+                            for p in proposals:
+                                if p["type"] in tally:
+                                    tally[p["type"]] += 1
+                            # Regression: re-eval training emails for this skill
+                            training_emails = await kb.get_training(skill_name)
+                            if training_emails:
+                                failures = []
+                                for te in training_emails:
+                                    te_email = {"subject": te["subject"], "body": te["body"]}
+                                    te_cls = classify(client, te_email)
+                                    te_result = await orchestrate(te_cls, te_email)
+                                    te_generated = te_result.final_reply or ""
+                                    if te_generated:
+                                        te_score = judge(client, te_email, te["answer"], te_generated)
+                                        te_avg = (te_score["action"] + te_score["completeness"] + te_score["tone"]) / 3
+                                        if te_avg < kb.REGRESSION_THRESHOLD:
+                                            failures.append({"subject": te["subject"], "avg": te_avg})
+                                if failures:
+                                    print(f"  [regression]  WARN {len(failures)} email(s) below threshold {kb.REGRESSION_THRESHOLD}:")
+                                    for f in failures:
+                                        print(f"     avg={f['avg']:.1f}  {f['subject'][:60]}")
+                                else:
+                                    print(f"  [regression]  ok ({len(training_emails)} emails checked)")
+                            # Add current email to training set if there is room
+                            ground_truth = section.get("ground_truth") or ""
+                            if ground_truth:
+                                added = await kb.add_training_email(
+                                    skill_name, subject, section["body"], ground_truth
+                                )
+                                if added:
+                                    tally["training_added"] += 1
+                                    print(f"  [training]    added to regression set for '{skill_name}'")
                         elif proposals:
                             print("  [improve]     --no-apply: proposals not written to DB")
                     except Exception as exc:
@@ -249,6 +288,11 @@ async def main():
         print(f"  completeness: {avg_completeness:.1f}/5")
         print(f"  tone:         {avg_tone:.1f}/5")
         print(f"  overall:      {overall:.1f}/5")
+        if run_improve and apply:
+            print(f"  skills:       {tally['skill_edit']} edited, {tally['new_skill']} new")
+            print(f"  kb entries:   {tally['kb_entry']}")
+            print(f"  guidelines:   {tally['agent_guideline']}")
+            print(f"  training set: {tally['training_added']} added")
 
     if args.save and output_sections:
         print(f"\nSaved to {out_path}")

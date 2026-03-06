@@ -19,7 +19,7 @@ from classifier import classify
 from orchestrator_agent import orchestrate
 from evaluator import judge
 from logger import get_logger
-import kb
+import store as kb
 import skills as skills_db
 
 log = get_logger(__name__)

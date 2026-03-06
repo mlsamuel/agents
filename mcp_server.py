@@ -33,10 +33,10 @@ from datetime import datetime, timedelta
 from pathlib import Path
 from mcp.server.fastmcp import FastMCP
 
-import kb
+import store as kb
 
 MCP_PORT = int(os.environ.get("MCP_PORT", "8765"))
-mcp = FastMCP("SupportBackend", port=MCP_PORT, streamable_http_path="/mcp")
+mcp = FastMCP("SupportBackend", port=MCP_PORT, streamable_http_path="/mcp", log_level="WARNING")
 
 # ── helpers ────────────────────────────────────────────────────────────────────
 
