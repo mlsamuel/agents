@@ -176,6 +176,38 @@ async def upsert_version(
     return new_ver
 
 
+async def rollback_skill(name: str) -> bool:
+    """Deactivate the current active version and restore the previous one.
+
+    Returns True if a previous version was found and restored, False otherwise.
+    """
+    pool = await get_pool()
+    async with pool.acquire() as conn:
+        async with conn.transaction():
+            current_ver: int | None = await conn.fetchval(
+                "SELECT version FROM skills WHERE name = $1 AND is_active = TRUE", name
+            )
+            if current_ver is None:
+                return False
+            prev_ver: int | None = await conn.fetchval(
+                "SELECT MAX(version) FROM skills WHERE name = $1 AND version < $2",
+                name, current_ver,
+            )
+            if prev_ver is None:
+                return False
+            await conn.execute(
+                "UPDATE skills SET is_active = FALSE WHERE name = $1 AND version = $2",
+                name, current_ver,
+            )
+            await conn.execute(
+                "UPDATE skills SET is_active = TRUE WHERE name = $1 AND version = $2",
+                name, prev_ver,
+            )
+        await _populate_cache(conn)
+    log.warning("skills: regression rollback '%s' v%d → v%d", name, current_ver, prev_ver)
+    return True
+
+
 async def insert_new(
     name: str, agent: str, types: list, tools: list, content: str
 ) -> None:

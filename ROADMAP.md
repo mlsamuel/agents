@@ -14,9 +14,8 @@
 | # | Shortcut | Current state | Consequence |
 |---|----------|--------------|-------------|
 | I1 | **Can't propose new MCP tools** | `IMPROVE_SYSTEM` only knows `skill_edit`, `kb_entry`, `new_skill`. | If an email fails because a needed tool doesn't exist, rewriting the skill won't help. |
-| ~~I2~~ | ~~**No regression testing**~~ | Fixed — `training_set` DB table seeded from `data/training_set.json`; after each `--apply`, training emails for the affected skill are re-evaluated and a warning is printed if any drop below avg 3.5. | — |
-| I3 | **No approval gate or rollback via git** | Proposals write versioned rows to Postgres immediately. Old versions retained with `is_active = false` but no git branch workflow. | A bad proposal can only be rolled back by manually reactivating the previous DB version. |
-| I4 | **No baseline / experiment tracking** | Eval scores written to `eval_output.md` but no history across runs. | Can't detect gradual drift or measure cumulative improvement. |
+| I2 | **No regression safety for KB and guidelines** | `skill_edit` regressions auto-revert via DB versioning. `kb_entry` and `agent_guideline` proposals are applied immediately with no regression check and no auto-revert. | A bad KB or guideline proposal can only be rolled back manually. |
+| I3 | **No baseline / experiment tracking** | Eval scores written to `eval_output.md` but no history across runs. | Can't detect gradual drift or measure cumulative improvement. |
 
 ### Architecture
 
@@ -49,13 +48,12 @@
 - `--apply`: writes a stub to `mcp_server.py` with `raise NotImplementedError`; human completes it
 - Updated files: `improver.py`, `mcp_server.py`
 
-**2c. Git-integrated proposals** — *fixes I3*
-- `apply_proposals()` creates a branch `improve/<timestamp>`, applies DB changes, commits eval run metadata
-- Dry-run prints a summary and requires confirmation before applying
-- `--no-branch`: apply directly (opt-in, current behaviour)
-- Updated file: `improver.py`
+**2c. KB and guideline regression safety** — *fixes I2*
+- After applying a `kb_entry` or `agent_guideline`, re-evaluate training emails for the affected skill
+- If avg drops below threshold, deactivate the new KB/guideline row (set `is_active = false`) and log a warning
+- Updated files: `store.py`, `pipeline.py`
 
-**2d. Experiment log** — *fixes I4*
+**2d. Experiment log** — *fixes I3*
 - `improvement_log.jsonl` (gitignored): one JSON line per run — `{ timestamp, run_id, skill_versions, before_avg, after_avg, delta, emails_n }`
 - `evaluator.py` appends a baseline entry on every `--save` run
 - `improver.py` reads last baseline and prints cumulative improvement trend
@@ -71,10 +69,6 @@
 - Print per-run cost summary at end of pipeline run
 - Updated file: `client.py`
 
-**3b. Structured logging**
-- `RotatingFileHandler` (`agents.log`, 10 MB, 3 backups)
-- Updated file: `logger.py`
-
 ---
 
 ## Sequencing
@@ -82,10 +76,9 @@
 ```
 Next      Phase 1a  Postgres for backend data (customers, tickets, orders)
 
-Month 1   Phase 2   Improve agent: regression testing, new_tool proposals,
-                    git integration, experiment log
+Month 1   Phase 2   Improve agent: new_tool proposals, git integration, experiment log
 
-Ongoing   Phase 3ab Cost tracking, structured logging
+Ongoing   Phase 3a  Cost tracking
 ```
 
 ---
@@ -96,9 +89,7 @@ Ongoing   Phase 3ab Cost tracking, structured logging
 |------|-------------|
 | `mcp_server.py` | Phase 1a: Postgres queries; Phase 2b: tool registry |
 | `improver.py` | Phase 2b: new_tool proposals; Phase 2d: experiment log |
-| `kb.py` | I2: training_set table, get_training, add_training_email |
-| `pipeline.py` | I2: post-apply regression run |
+| `pipeline.py` | Phase 2c: KB/guideline regression safety; Phase 2d: experiment log |
 | `evaluator.py` | Phase 2d: experiment log baseline |
 | `client.py` | Phase 3a: cost tracking |
-| `logger.py` | Phase 3b: RotatingFileHandler |
 | NEW `db.py` | Phase 1a: asyncpg pool, schema, query helpers for customers/tickets/orders |

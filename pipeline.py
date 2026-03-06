@@ -36,6 +36,7 @@ from improver import (
 )
 import store as kb
 import skills as skills_db
+from skills import rollback_skill
 
 load_dotenv()
 
@@ -247,6 +248,14 @@ async def main():
                                     print(f"  [regression]  WARN {len(failures)} email(s) below threshold {kb.REGRESSION_THRESHOLD}:")
                                     for f in failures:
                                         print(f"     avg={f['avg']:.1f}  {f['subject'][:60]}")
+                                    skill_was_edited = any(p["type"] == "skill_edit" for p in proposals)
+                                    if skill_was_edited:
+                                        reverted = await rollback_skill(skill_name)
+                                        if reverted:
+                                            all_skills = load_all_skills()
+                                            print(f"  [regression]  reverted '{skill_name}' to previous version")
+                                        else:
+                                            print(f"  [regression]  could not revert '{skill_name}' — no previous version")
                                 else:
                                     print(f"  [regression]  ok ({len(training_emails)} emails checked)")
                             # Add current email to training set if there is room
