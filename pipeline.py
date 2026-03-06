@@ -282,6 +282,7 @@ async def main():
         mcp_proc.wait()
 
     if not run_eval:
+        print(f"\n{client.usage_summary()}")
         return
 
     # Aggregate stats
@@ -302,6 +303,7 @@ async def main():
             print(f"  kb entries:   {tally['kb_entry']}")
             print(f"  guidelines:   {tally['agent_guideline']}")
             print(f"  training set: {tally['training_added']} added")
+        print(f"  {client.usage_summary()}")
 
     if args.save and output_sections:
         print(f"\nSaved to {out_path}")

@@ -22,15 +22,29 @@ MAX_DELAY = 60.0   # seconds
 
 _RETRYABLE_STATUS = {429, 500, 502, 503, 529}
 
+# Cost per million tokens (input, output) — update when pricing changes
+_PRICING: dict[str, tuple[float, float]] = {
+    "claude-haiku-4-5-20251001": (0.80, 4.00),
+    "claude-sonnet-4-6":         (3.00, 15.00),
+    "claude-opus-4-6":           (15.00, 75.00),
+}
+
 
 class _Messages:
-    def __init__(self, inner):
+    def __init__(self, inner, counter: "Client"):
         self._inner = inner
+        self._counter = counter
 
     def create(self, **kwargs):
         for attempt in range(MAX_RETRIES + 1):
             try:
-                return self._inner.create(**kwargs)
+                response = self._inner.create(**kwargs)
+                model = kwargs.get("model", "")
+                usage = response.usage
+                bucket = self._counter._usage.setdefault(model, [0, 0])
+                bucket[0] += usage.input_tokens
+                bucket[1] += usage.output_tokens
+                return response
             except anthropic.APIStatusError as exc:
                 if exc.status_code not in _RETRYABLE_STATUS or attempt == MAX_RETRIES:
                     raise
@@ -51,8 +65,25 @@ class _Messages:
 
 
 class Client:
-    """Drop-in replacement for anthropic.Anthropic() with built-in retry."""
+    """Drop-in replacement for anthropic.Anthropic() with built-in retry and cost tracking."""
 
     def __init__(self):
+        self._usage: dict[str, list[int]] = {}  # model → [input_tokens, output_tokens]
         _raw = anthropic.Anthropic()
-        self.messages = _Messages(_raw.messages)
+        self.messages = _Messages(_raw.messages, self)
+
+    def cost_usd(self) -> float:
+        """Return estimated total cost in USD based on per-model token usage."""
+        total = 0.0
+        for model, (inp, out) in self._usage.items():
+            prices = _PRICING.get(model)
+            if prices:
+                total += (inp * prices[0] + out * prices[1]) / 1_000_000
+        return total
+
+    def usage_summary(self) -> str:
+        """Return a one-line summary of token usage and estimated cost."""
+        total_in  = sum(v[0] for v in self._usage.values())
+        total_out = sum(v[1] for v in self._usage.values())
+        return (f"tokens: {total_in:,} in / {total_out:,} out  "
+                f"cost: ~${self.cost_usd():.4f}")

@@ -21,7 +21,6 @@
 | # | Shortcut | Current state | Consequence |
 |---|----------|--------------|-------------|
 | A2 | **Max tool turns is a global constant** | `MAX_TOOL_TURNS = 8` hardcoded. | Can't tune per skill, no adaptive termination. |
-| A4 | **No cost tracking** | No visibility into per-run API spend. | Can't budget or optimize model selection. |
 
 ---
 
@@ -55,24 +54,12 @@
 
 ---
 
-### Phase 3 — Architecture cleanup
-
-**3a. Cost tracking** — *fixes A4*
-- Instrument `Client._Messages.create()` to extract `usage.input_tokens + output_tokens`
-- Compute cost using a model pricing table in `client.py`
-- Print per-run cost summary at end of pipeline run
-- Updated file: `client.py`
-
----
-
 ## Sequencing
 
 ```
 Next      Phase 1a  Postgres for backend data (customers, tickets, orders)
 
-Month 1   Phase 2   Improve agent: new_tool proposals, git integration, experiment log
-
-Ongoing   Phase 3a  Cost tracking
+Month 1   Phase 2   Improve agent: new_tool proposals, experiment log
 ```
 
 ---
@@ -85,5 +72,4 @@ Ongoing   Phase 3a  Cost tracking
 | `improver.py` | Phase 2b: new_tool proposals; Phase 2c: experiment log |
 | `pipeline.py` | Phase 2c: experiment log |
 | `evaluator.py` | Phase 2c: experiment log baseline |
-| `client.py` | Phase 3a: cost tracking |
 | NEW `db.py` | Phase 1a: asyncpg pool, schema, query helpers for customers/tickets/orders |
