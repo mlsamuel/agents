@@ -14,8 +14,7 @@
 | # | Shortcut | Current state | Consequence |
 |---|----------|--------------|-------------|
 | I1 | **Can't propose new MCP tools** | `IMPROVE_SYSTEM` only knows `skill_edit`, `kb_entry`, `new_skill`. | If an email fails because a needed tool doesn't exist, rewriting the skill won't help. |
-| I2 | **No regression safety for KB and guidelines** | `skill_edit` regressions auto-revert via DB versioning. `kb_entry` and `agent_guideline` proposals are applied immediately with no regression check and no auto-revert. | A bad KB or guideline proposal can only be rolled back manually. |
-| I3 | **No baseline / experiment tracking** | Eval scores written to `eval_output.md` but no history across runs. | Can't detect gradual drift or measure cumulative improvement. |
+| I2 | **No baseline / experiment tracking** | Eval scores written to `eval_output.md` but no history across runs. | Can't detect gradual drift or measure cumulative improvement. |
 
 ### Architecture
 
@@ -48,12 +47,7 @@
 - `--apply`: writes a stub to `mcp_server.py` with `raise NotImplementedError`; human completes it
 - Updated files: `improver.py`, `mcp_server.py`
 
-**2c. KB and guideline regression safety** — *fixes I2*
-- After applying a `kb_entry` or `agent_guideline`, re-evaluate training emails for the affected skill
-- If avg drops below threshold, deactivate the new KB/guideline row (set `is_active = false`) and log a warning
-- Updated files: `store.py`, `pipeline.py`
-
-**2d. Experiment log** — *fixes I3*
+**2c. Experiment log** — *fixes I2*
 - `improvement_log.jsonl` (gitignored): one JSON line per run — `{ timestamp, run_id, skill_versions, before_avg, after_avg, delta, emails_n }`
 - `evaluator.py` appends a baseline entry on every `--save` run
 - `improver.py` reads last baseline and prints cumulative improvement trend
@@ -88,8 +82,8 @@ Ongoing   Phase 3a  Cost tracking
 | File | What changes |
 |------|-------------|
 | `mcp_server.py` | Phase 1a: Postgres queries; Phase 2b: tool registry |
-| `improver.py` | Phase 2b: new_tool proposals; Phase 2d: experiment log |
-| `pipeline.py` | Phase 2c: KB/guideline regression safety; Phase 2d: experiment log |
-| `evaluator.py` | Phase 2d: experiment log baseline |
+| `improver.py` | Phase 2b: new_tool proposals; Phase 2c: experiment log |
+| `pipeline.py` | Phase 2c: experiment log |
+| `evaluator.py` | Phase 2c: experiment log baseline |
 | `client.py` | Phase 3a: cost tracking |
 | NEW `db.py` | Phase 1a: asyncpg pool, schema, query helpers for customers/tickets/orders |
