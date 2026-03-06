@@ -41,34 +41,42 @@ You are an expert at improving customer support AI agent skills.
 
 You will receive:
 1. A skill .md file (full content) used by an agent to handle support emails
-2. One or more examples where the agent scored below threshold, with scores,
-   eval comments, ground truth replies, and the agent's generated replies
+2. A failing example with scores, eval comment, ground truth reply, and generated reply
 
-## Decision rules — apply in order
+## Content types — choose exactly the right type for each proposal
 
-### kb_entry (ALWAYS do this when applicable)
-Propose a kb_entry whenever the ground truth reply contains specific factual information
-that the agent's reply was missing — e.g. policies, pricing, product details, procedures,
-deadlines, supported platforms, contact details. Extract the fact directly from the ground
-truth; do not invent or generalise. You MUST propose a kb_entry any time the generated
-reply omits concrete information that is present in the ground truth.
+### kb_entry — customer-facing answer
+Propose a kb_entry when the ground truth delivers a direct, complete factual answer the
+customer can act on immediately: a policy, deadline, price, product feature, or procedure
+fully described in the reply itself.
 
-### skill_edit (ONLY when the eval comment identifies a process issue)
-Propose a skill_edit ONLY when the eval comment explicitly describes a workflow or
-process problem — e.g. "agent escalated instead of asking a question first", "agent
-should have looked up ticket history before replying", "agent created a ticket when it
-should have asked for clarification". Do NOT propose a skill_edit just because the reply
-lacked information; that is a kb_entry problem, not a skill problem.
+The `answer` must be customer-facing prose — as if appearing on a help page. It must NOT
+contain agent-perspective phrases ("request their", "ask the customer", "you must first",
+"once this information is provided"). If answering requires gathering more information
+first, use agent_guideline instead.
+
+### agent_guideline — information collection pattern
+Propose an agent_guideline when the ground truth shows the agent asking the customer for
+more information before acting — e.g. account numbers, dates, platform details, environment
+specifications, access requirements. Capture what situation triggers this and exactly what
+to collect.
+
+The `trigger` describes the situation (customer-facing perspective). The `instruction`
+states what to ask for and why, written from the agent's perspective ("Ask the customer
+for their account number and the specific transaction dates and amounts.").
+
+### skill_edit — wrong workflow or action
+Propose a skill_edit ONLY when the eval comment explicitly identifies a process error:
+wrong action taken, wrong tool used, wrong order of steps.
 
 ### new_skill (rare)
 Propose a new_skill only when the email type is entirely unhandled by any existing skill.
 
 ## Output rules
-- Only propose changes directly evidenced by the eval comments and ground truth
+- Only propose changes directly evidenced by the eval comment and ground truth
 - For skill_edit and new_skill: provide the COMPLETE .md file content (full rewrite).
   Preserve all existing security notes, frontmatter fields, and format rules.
-- For kb_entry: derive the answer text verbatim or near-verbatim from the ground truth.
-  Do NOT include an "id" field — IDs are assigned automatically by the database.
+- Do NOT include an "id" field in kb_entry or agent_guideline — IDs are assigned by the database.
 - Respond with valid JSON only, no markdown wrapper, matching this exact schema:
 {
   "proposals": [
@@ -85,6 +93,17 @@ Propose a new_skill only when the email type is entirely unhandled by any existi
         "topic": "...",
         "question": "...",
         "answer": "...",
+        "keywords": ["..."]
+      }
+    },
+    {
+      "type": "agent_guideline",
+      "rationale": "one sentence explaining why",
+      "entry": {
+        "category": "general",
+        "topic": "...",
+        "trigger": "...",
+        "instruction": "...",
         "keywords": ["..."]
       }
     },
@@ -193,6 +212,37 @@ async def _merge_kb_entries(client: Client, existing: dict, proposed: dict) -> d
     merged["topic"]    = existing["topic"]      # enforce — upsert_version matches on topic
     return merged
 
+
+async def _merge_guideline_entries(client: Client, existing: dict, proposed: dict) -> dict:
+    """Ask the LLM to merge two semantically similar agent guidelines into one."""
+    user_msg = (
+        f"Existing entry:\n{json.dumps(existing, indent=2)}\n\n"
+        f"Proposed entry:\n{json.dumps(proposed, indent=2)}\n\n"
+        f"Merge these. Keep id={existing['id']!r} and category={existing['category']!r}."
+    )
+    response = client.messages.create(
+        model=MERGE_MODEL,
+        max_tokens=1024,
+        system=(
+            "Merge two agent guideline entries on the same topic into one. "
+            "Keep the existing entry's id and category unchanged. "
+            "Combine the trigger and instruction to preserve all unique content from both. "
+            'Respond with JSON only, no markdown wrapper, matching this exact schema: '
+            '{"id": "...", "category": "...", "topic": "...", "trigger": "...", "instruction": "...", "keywords": [...]}'
+        ),
+        messages=[{"role": "user", "content": user_msg}],
+    )
+    raw = response.content[0].text.strip()
+    if raw.startswith("```"):
+        raw = raw[raw.index("\n") + 1:]
+        if raw.endswith("```"):
+            raw = raw[:raw.rindex("```")].rstrip()
+    merged = json.loads(raw)
+    merged["category"] = existing["category"]
+    merged["topic"]    = existing["topic"]
+    return merged
+
+
 def _parse_frontmatter(text: str) -> tuple[dict, str]:
     """Split YAML frontmatter and body. Returns ({}, text) if no frontmatter."""
     if not text.startswith("---"):
@@ -244,6 +294,26 @@ async def _apply_proposals_async(client: Client, all_proposals: list[dict]) -> N
                     print(f"  KB entry added: id={new_id} — {entry.get('topic', '')}")
                 except Exception as exc:
                     log.warning("KB DB insert failed: %s — skipping", exc)
+
+        elif ptype == "agent_guideline":
+            entry = p["entry"]
+            matches = await kb.search_guideline(entry.get("trigger", ""), top_k=1)
+            if matches and matches[0]["score"] >= KB_SIMILARITY_THRESHOLD:
+                existing = matches[0]
+                print(f"  Guideline merge: '{entry.get('topic')}' ~ '{existing['topic']}' "
+                      f"(score={existing['score']})")
+                try:
+                    merged = await _merge_guideline_entries(client, existing, entry)
+                    new_id = await kb.upsert_guideline_version(merged)
+                    print(f"  Guideline merged: {existing['id']} → v(new id={new_id}) — {merged.get('topic', '')}")
+                except Exception as exc:
+                    log.warning("Guideline merge failed: %s — skipping", exc)
+            else:
+                try:
+                    new_id = await kb.insert_guideline(entry)
+                    print(f"  Guideline added: id={new_id} — {entry.get('topic', '')}")
+                except Exception as exc:
+                    log.warning("Guideline DB insert failed: %s — skipping", exc)
 
 
 async def apply_proposals(client: Client, all_proposals: list[dict]) -> None:

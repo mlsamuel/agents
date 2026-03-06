@@ -1,20 +1,27 @@
 """
-kb.py — Knowledge base backed by pgvector.
+kb.py — Knowledge base and agent guidelines backed by pgvector.
 
 On first call to get_pool():
   - Connects to DATABASE_URL
-  - Creates the knowledge_base table + HNSW index if not present
-  - Seeds from data/knowledge_base.json if the table is empty
+  - Creates knowledge_base + agent_guidelines tables + HNSW indexes if not present
+  - Seeds knowledge_base from data/knowledge_base.json if the table is empty
 
-Public API:
-  search(query, category, top_k) -> list[dict]
-  insert(entry)          -> int   — insert new entry (v1), returns assigned id
-  upsert_version(entry)  -> int   — deactivate existing active, insert new version
+Public API (knowledge base):
+  search(query, category, top_k)    -> list[dict]
+  insert(entry)                     -> int
+  upsert_version(entry)             -> int
+
+Public API (agent guidelines):
+  search_guideline(query, category, top_k) -> list[dict]
+  insert_guideline(entry)                  -> int
+  upsert_guideline_version(entry)          -> int
 """
 
 import json
 import os
 from pathlib import Path
+
+os.environ.setdefault("TOKENIZERS_PARALLELISM", "false")
 
 import asyncpg
 from fastembed import TextEmbedding
@@ -46,6 +53,23 @@ CREATE TABLE IF NOT EXISTS knowledge_base (
 
 CREATE INDEX IF NOT EXISTS knowledge_base_embedding_idx
     ON knowledge_base USING hnsw (embedding vector_cosine_ops);
+
+CREATE TABLE IF NOT EXISTS agent_guidelines (
+    id          SERIAL PRIMARY KEY,
+    category    TEXT NOT NULL,
+    topic       TEXT NOT NULL,
+    trigger     TEXT NOT NULL,
+    instruction TEXT NOT NULL,
+    keywords    TEXT[] NOT NULL DEFAULT '{}',
+    version     INT NOT NULL DEFAULT 1,
+    is_active   BOOLEAN NOT NULL DEFAULT TRUE,
+    created_at  TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+    embedding   vector(384),
+    UNIQUE (topic, version)
+);
+
+CREATE INDEX IF NOT EXISTS agent_guidelines_embedding_idx
+    ON agent_guidelines USING hnsw (embedding vector_cosine_ops);
 """
 
 
@@ -193,4 +217,95 @@ async def upsert_version(entry: dict) -> int:
                 entry["answer"], keywords, new_ver, vec_str,
             )
     log.info("kb: upserted '%s' → v%d (id=%d)", entry.get("topic", ""), new_ver, new_id)
+    return new_id
+
+
+# ── Agent guidelines ──────────────────────────────────────────────────────────
+
+async def search_guideline(query: str, category: str = "", top_k: int = 3) -> list[dict]:
+    """ANN search over active agent guidelines. Returns up to top_k entries with score >= 0.25."""
+    pool = await get_pool()
+    q_str = _to_vec_str(next(_get_model().embed([query])))
+
+    fetch_n = top_k * 4 if category else top_k
+
+    async with pool.acquire() as conn:
+        rows = await conn.fetch(
+            """SELECT id, category, topic, trigger, instruction, keywords,
+                      1 - (embedding <=> $1::vector) AS score
+               FROM agent_guidelines
+               WHERE is_active = TRUE
+               ORDER BY embedding <=> $1::vector
+               LIMIT $2""",
+            q_str, fetch_n,
+        )
+
+    results = []
+    for r in rows:
+        score = float(r["score"])
+        if score < 0.25:
+            continue
+        if category and r["category"] != category:
+            continue
+        results.append({
+            "id":          r["id"],
+            "category":    r["category"],
+            "topic":       r["topic"],
+            "trigger":     r["trigger"],
+            "instruction": r["instruction"],
+            "keywords":    list(r["keywords"]),
+            "score":       round(score, 3),
+        })
+        if len(results) == top_k:
+            break
+
+    return results
+
+
+async def insert_guideline(entry: dict) -> int:
+    """Embed and insert a new agent guideline at version 1. Returns the assigned integer id."""
+    pool = await get_pool()
+    vec_str = _to_vec_str(next(_get_model().embed([entry["trigger"]])))
+    keywords = entry.get("keywords", [])
+
+    async with pool.acquire() as conn:
+        new_id = await conn.fetchval(
+            """INSERT INTO agent_guidelines
+                   (category, topic, trigger, instruction, keywords, embedding)
+               VALUES ($1, $2, $3, $4, $5, $6::vector)
+               RETURNING id""",
+            entry["category"], entry["topic"], entry["trigger"],
+            entry["instruction"], keywords, vec_str,
+        )
+    log.info("kb: inserted guideline %d (%s)", new_id, entry.get("topic", ""))
+    return new_id
+
+
+async def upsert_guideline_version(entry: dict) -> int:
+    """Deactivate existing active guideline for same topic and insert a new version. Returns new id."""
+    pool = await get_pool()
+    vec_str = _to_vec_str(next(_get_model().embed([entry["trigger"]])))
+    keywords = entry.get("keywords", [])
+
+    async with pool.acquire() as conn:
+        async with conn.transaction():
+            await conn.execute(
+                """UPDATE agent_guidelines SET is_active = FALSE
+                   WHERE topic = $1 AND category = $2 AND is_active = TRUE""",
+                entry["topic"], entry["category"],
+            )
+            new_ver = await conn.fetchval(
+                """SELECT COALESCE(MAX(version), 0) + 1 FROM agent_guidelines
+                   WHERE topic = $1 AND category = $2""",
+                entry["topic"], entry["category"],
+            )
+            new_id = await conn.fetchval(
+                """INSERT INTO agent_guidelines
+                       (category, topic, trigger, instruction, keywords, version, embedding)
+                   VALUES ($1, $2, $3, $4, $5, $6, $7::vector)
+                   RETURNING id""",
+                entry["category"], entry["topic"], entry["trigger"],
+                entry["instruction"], keywords, new_ver, vec_str,
+            )
+    log.info("kb: upserted guideline '%s' → v%d (id=%d)", entry.get("topic", ""), new_ver, new_id)
     return new_id

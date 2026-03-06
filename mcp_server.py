@@ -191,6 +191,26 @@ def _kb_search_sync(query: str, category: str = "", top_k: int = 3) -> list[dict
     return asyncio.run(kb.search(query, category, top_k))
 
 
+@mcp.tool()
+async def search_agent_guidelines(query: str, category: str = "") -> list[dict]:
+    """Search agent handling guidelines for the current customer situation.
+
+    Call this when you need to know what information to collect from the customer
+    before acting — e.g. for billing disputes, technical investigations, or
+    documentation requests. Returns instructions written for the agent.
+
+    Args:
+        query:    Description of the current customer situation.
+        category: Optional filter — billing, returns, technical, general.
+    """
+    return await kb.search_guideline(query, category, top_k=3)
+
+
+def _guideline_search_sync(query: str, category: str = "") -> list[dict]:
+    """Sync wrapper used by the Docker sandbox tool registry."""
+    return asyncio.run(kb.search_guideline(query, category))
+
+
 # ── sandboxed code execution ────────────────────────────────────────────────────
 
 _SANDBOX_RUNNER = Path(__file__).parent / "sandbox_runner.py"
@@ -216,7 +236,8 @@ _TOOL_REGISTRY: dict[str, dict] = {
         "escalate_to_human": escalate_to_human,
     },
     "kb": {
-        "search_knowledge_base": _kb_search_sync,
+        "search_knowledge_base":   _kb_search_sync,
+        "search_agent_guidelines": _guideline_search_sync,
     },
 }
 
