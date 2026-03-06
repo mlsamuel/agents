@@ -150,9 +150,9 @@ After each email is scored, if the average is below `--min-score`, the improver 
 
 **Versioning** — skill, KB, and guideline updates are non-destructive. The previous active row is set `is_active = false`; a new row with an incremented `version` is inserted. Old versions remain for audit and rollback.
 
-**Regression testing** — after each `--apply`, the training emails for the affected skill are re-evaluated (classify → orchestrate → judge). Any email scoring below avg 3.5 triggers a warning. The failing email is also offered to the training set (up to 3 emails per skill).
+**Regression testing** — after each `--apply`, the training emails for the affected skill are re-evaluated (classify → orchestrate → judge). If any email scores below avg 3.5 and the proposal was a `skill_edit`, the new skill version is automatically deactivated and the previous version restored. A warning is logged either way. The current email is also added to the training set if there is room (up to 3 per skill).
 
-**EVAL SUMMARY** — printed at the end of each run; includes per-dimension scores plus a count of skills edited, KB entries added, guidelines added, and training emails added during the run.
+**EVAL SUMMARY** — printed at the end of each run; includes per-dimension scores, a count of skills edited, KB entries added, guidelines added, training emails added, and estimated API cost for the run.
 
 ## Project structure
 
@@ -172,7 +172,7 @@ agents/
 │                             #   (knowledge_base + agent_guidelines + training_set)
 ├── skills.py                 # asyncpg pool, skill loading and versioning
 ├── logger.py                 # shared logging config
-├── client.py                 # Anthropic client wrapper
+├── client.py                 # Anthropic client wrapper with retry and per-model cost tracking
 ├── data/skills/
 │   ├── billing/
 │   ├── general/
