@@ -1,6 +1,6 @@
 # Customer Support Agent System
 
-A multi-agent customer support pipeline built with Claude and the Model Context Protocol (MCP). Emails are classified, routed to specialist workflow agents, and handled using skill files that drive tool selection and reply logic. An integrated eval+improve loop scores replies and automatically updates skills and the knowledge base.
+A multi-agent customer support pipeline built with Claude and the Model Context Protocol (MCP). Emails are classified, routed to specialist workflow agents, and handled using skill files that drive tool selection and reply logic. An integrated eval+improve loop scores replies and automatically updates skills, the knowledge base, and agent guidelines.
 
 ## Architecture
 
@@ -40,11 +40,14 @@ evaluator                     ← Haiku: scores action / completeness / tone
 improver                      ← Sonnet: proposes skill_edit / kb_entry /
     │                            agent_guideline / new_skill
     │                            pgvector similarity check before insert/merge
+    │                            regression test on training_set after apply
     ▼
-Postgres (skills + knowledge_base + agent_guidelines tables)
+Postgres (skills + knowledge_base + agent_guidelines + training_set tables)
 ```
 
-Skills are stored in the `skills` Postgres table (versioned, with `is_active` flag). The knowledge base lives in the `knowledge_base` table and agent-facing handling patterns in `agent_guidelines`, both with pgvector HNSW indexes. Skills are seeded from `skills/<queue>/*.md` and the knowledge base from `data/knowledge_base.json` on first run.
+Skills are stored in the `skills` Postgres table (versioned, with `is_active` flag). The knowledge base lives in the `knowledge_base` table and agent-facing handling patterns in `agent_guidelines`, both with pgvector HNSW indexes. A `training_set` table holds up to 3 golden emails per skill for regression testing after each apply.
+
+All tables are seeded from `data/` on first run: `skills/**/*.md`, `data/knowledge_base.json`, `data/agent_guidelines.json`, `data/training_set.json`.
 
 `pipeline.py` starts `mcp_server.py` as a persistent HTTP subprocess at startup (port 8765) and terminates it when the run finishes. All workflow agents in a run share the same server process, so the embedding model and DB connection pool are initialised once.
 
@@ -73,7 +76,7 @@ cp .env.example .env
 #   MCP_SERVER_URL=http://127.0.0.1:8765/mcp  — URL workflow agents connect to
 ```
 
-The database schema (tables, HNSW index) is created automatically on first run. Seed data is loaded from `data/knowledge_base.json` and `skills/**/*.md` if the tables are empty.
+The database schema (tables, HNSW indexes) is created automatically on first run. Seed data is loaded from `data/` if the tables are empty.
 
 **3. Docker sandbox (required for `run_code`)**
 
@@ -145,7 +148,11 @@ After each email is scored, if the average is below `--min-score`, the improver 
 
 **Deduplication** — before inserting a new KB or guideline entry, the improver runs a pgvector similarity search. If an existing active entry scores ≥ 0.90 cosine similarity, Haiku merges the two entries and creates a new version rather than inserting a duplicate.
 
-**Versioning** — both skill and KB updates are non-destructive. The previous active row is set `is_active = false`; a new row with an incremented `version` is inserted. Old versions remain for audit and rollback.
+**Versioning** — skill, KB, and guideline updates are non-destructive. The previous active row is set `is_active = false`; a new row with an incremented `version` is inserted. Old versions remain for audit and rollback.
+
+**Regression testing** — after each `--apply`, the training emails for the affected skill are re-evaluated (classify → orchestrate → judge). Any email scoring below avg 3.5 triggers a warning. The failing email is also offered to the training set (up to 3 emails per skill).
+
+**EVAL SUMMARY** — printed at the end of each run; includes per-dimension scores plus a count of skills edited, KB entries added, guidelines added, and training emails added during the run.
 
 ## Project structure
 
@@ -161,18 +168,21 @@ agents/
 ├── input_screener.py         # LLM-based injection detector
 ├── evaluator.py              # LLM-as-judge scoring (judge, append_section)
 ├── improver.py               # eval-driven skill/KB improvement (generate_proposals, apply_proposals)
-├── kb.py                     # asyncpg pool, schema bootstrap, pgvector search/insert/upsert (knowledge_base + agent_guidelines)
+├── store.py                  # asyncpg pool, schema bootstrap, pgvector search/insert/upsert
+│                             #   (knowledge_base + agent_guidelines + training_set)
 ├── skills.py                 # asyncpg pool, skill loading and versioning
 ├── logger.py                 # shared logging config
 ├── client.py                 # Anthropic client wrapper
-├── skills/
+├── data/skills/
 │   ├── billing/
 │   ├── general/
 │   ├── returns/
 │   └── technical_support/   # seed source — loaded to DB on first run
 └── data/
     ├── emails.csv            # email dataset (subject, body, answer, type, queue, priority, language)
-    └── knowledge_base.json  # seed source — loaded to knowledge_base table on first run
+    ├── knowledge_base.json   # seed source — loaded to knowledge_base table on first run
+    ├── agent_guidelines.json # seed source — loaded to agent_guidelines table on first run
+    └── training_set.json     # seed source — loaded to training_set table on first run
 ```
 
 ## Skills
@@ -183,10 +193,10 @@ Each skill `.md` file (seed source) has a YAML frontmatter block and a system pr
 ---
 name: process_refund
 queue: billing
-types: [refund, return, billing_dispute]
+types: [Incident, Request]
 tools: [lookup_customer, check_order_status, process_refund, send_reply]
 ---
 You are a refund specialist...
 ```
 
-At runtime, skills are read from the `skills` Postgres table. The `tools` list controls which MCP tools the agent can access. The improver can update skills in-place (new versioned row, old row deactivated) without touching the seed files.
+The directory name (`billing/`, `returns/`, etc.) is used as the queue key — the `queue:` frontmatter field is documentation only. At runtime, skills are read from the `skills` Postgres table. The `tools` list controls which MCP tools the agent can access. The improver can update skills in-place (new versioned row, old row deactivated) without touching the seed files.
