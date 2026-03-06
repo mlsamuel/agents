@@ -23,7 +23,6 @@
 | # | Shortcut | Current state | Consequence |
 |---|----------|--------------|-------------|
 | A2 | **Max tool turns is a global constant** | `MAX_TOOL_TURNS = 8` hardcoded. | Can't tune per skill, no adaptive termination. |
-| A3 | **Email body hard-truncated at 2000 chars** | Simple slice in `workflow_agent.py`. | Long technical emails lose critical context. |
 | A4 | **No cost tracking** | No visibility into per-run API spend. | Can't budget or optimize model selection. |
 
 ---
