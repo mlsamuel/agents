@@ -20,14 +20,15 @@ orchestrator_agent            ← Sonnet: decomposes multi-topic emails,
     │                            fans out to parallel WorkflowAgents
     ▼
 workflow_agent(s)             ← Sonnet + MCP tools via skill files (from DB)
-    │   ├── lookup_customer
-    │   ├── get_ticket_history
-    │   ├── create_ticket
+    │   ├── lookup_customer           connects to persistent mcp_server.py
+    │   ├── get_ticket_history        over streamable-HTTP (one process per
+    │   ├── create_ticket             pipeline run, shared across all emails)
     │   ├── check_order_status
     │   ├── process_refund
     │   ├── escalate_to_human
     │   ├── send_reply
-    │   ├── search_knowledge_base   ← pgvector ANN over knowledge_base table
+    │   ├── search_knowledge_base     ← pgvector ANN over knowledge_base table
+    │   ├── search_agent_guidelines   ← pgvector ANN over agent_guidelines table
     │   └── run_code (sandboxed Python)
     ▼
 merged reply + WorkflowResult
@@ -36,14 +37,16 @@ merged reply + WorkflowResult
 evaluator                     ← Haiku: scores action / completeness / tone
     │
     ▼  (when --improve and avg < --min-score)
-improver                      ← Sonnet: proposes skill_edit / kb_entry / new_skill
-    │                            applies to DB; pgvector similarity check before
-    │                            inserting KB entries to prevent duplicates
+improver                      ← Sonnet: proposes skill_edit / kb_entry /
+    │                            agent_guideline / new_skill
+    │                            pgvector similarity check before insert/merge
     ▼
-Postgres (skills + knowledge_base tables)
+Postgres (skills + knowledge_base + agent_guidelines tables)
 ```
 
-Skills are stored in the `skills` Postgres table (versioned, with `is_active` flag). The knowledge base lives in the `knowledge_base` table with a pgvector HNSW index. Both are seeded from `skills/<queue>/*.md` and `data/knowledge_base.json` on first run.
+Skills are stored in the `skills` Postgres table (versioned, with `is_active` flag). The knowledge base lives in the `knowledge_base` table and agent-facing handling patterns in `agent_guidelines`, both with pgvector HNSW indexes. Skills are seeded from `skills/<queue>/*.md` and the knowledge base from `data/knowledge_base.json` on first run.
+
+`pipeline.py` starts `mcp_server.py` as a persistent HTTP subprocess at startup (port 8765) and terminates it when the run finishes. All workflow agents in a run share the same server process, so the embedding model and DB connection pool are initialised once.
 
 ## Setup
 
@@ -131,11 +134,12 @@ After each email is scored, if the average is below `--min-score`, the improver 
 
 | Type | When | What it changes |
 |------|------|----------------|
-| `kb_entry` | Ground truth contains facts the agent's reply was missing | Inserts or merges a versioned entry into the `knowledge_base` table |
+| `kb_entry` | Ground truth contains a direct factual answer (policy, price, procedure) | Inserts or merges a versioned customer-facing entry into `knowledge_base` |
+| `agent_guideline` | Ground truth shows the agent collecting info before acting (account numbers, dates, platform details) | Inserts or merges a versioned agent-facing entry into `agent_guidelines` |
 | `skill_edit` | Eval comment identifies a workflow problem (wrong action, wrong tool) | Inserts a new active version of the skill into the `skills` table |
 | `new_skill` | Email type is entirely unhandled by any existing skill | Inserts a new skill row into the `skills` table |
 
-**KB deduplication** — before inserting a new KB entry, the improver runs a pgvector similarity search. If an existing active entry scores ≥ 0.90 cosine similarity, Haiku merges the two entries and creates a new version rather than inserting a duplicate.
+**Deduplication** — before inserting a new KB or guideline entry, the improver runs a pgvector similarity search. If an existing active entry scores ≥ 0.90 cosine similarity, Haiku merges the two entries and creates a new version rather than inserting a duplicate.
 
 **Versioning** — both skill and KB updates are non-destructive. The previous active row is set `is_active = false`; a new row with an incremented `version` is inserted. Old versions remain for audit and rollback.
 
@@ -153,7 +157,7 @@ agents/
 ├── input_screener.py         # LLM-based injection detector
 ├── evaluator.py              # LLM-as-judge scoring (judge, append_section)
 ├── improver.py               # eval-driven skill/KB improvement (generate_proposals, apply_proposals)
-├── kb.py                     # asyncpg pool, schema bootstrap, pgvector search/insert/upsert
+├── kb.py                     # asyncpg pool, schema bootstrap, pgvector search/insert/upsert (knowledge_base + agent_guidelines)
 ├── skills.py                 # asyncpg pool, skill loading and versioning
 ├── logger.py                 # shared logging config
 ├── client.py                 # Anthropic client wrapper
