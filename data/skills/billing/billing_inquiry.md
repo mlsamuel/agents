@@ -1,6 +1,6 @@
 ---
 name: billing_inquiry
-queue: Billing and Payments
+agent: billing
 types: [Question, Change]
 tools: [lookup_customer, search_knowledge_base, create_ticket, send_reply]
 ---

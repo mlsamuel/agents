@@ -192,11 +192,11 @@ Each skill `.md` file (seed source) has a YAML frontmatter block and a system pr
 ```yaml
 ---
 name: process_refund
-queue: billing
+agent: billing
 types: [Incident, Request]
 tools: [lookup_customer, check_order_status, process_refund, send_reply]
 ---
 You are a refund specialist...
 ```
 
-The directory name (`billing/`, `returns/`, etc.) is used as the queue key — the `queue:` frontmatter field is documentation only. At runtime, skills are read from the `skills` Postgres table. The `tools` list controls which MCP tools the agent can access. The improver can update skills in-place (new versioned row, old row deactivated) without touching the seed files.
+`agent` must match one of the four agent keys: `billing`, `returns`, `technical_support`, `general`. It is documentation only — at runtime the agent key comes from the directory name (`billing/`, `returns/`, etc.), not this field. `types` and `tools` are stored in the DB and used for routing and tool filtering respectively. The improver can update skills in-place (new versioned row, old row deactivated) without touching the seed files.

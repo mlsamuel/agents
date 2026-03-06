@@ -1,6 +1,6 @@
 ---
 name: initiate_return
-queue: Returns and Exchanges
+agent: returns
 types: [Request, Incident, Problem]
 tools: [lookup_customer, search_knowledge_base, check_order_status, create_ticket, process_refund, send_reply]
 ---

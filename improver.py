@@ -120,7 +120,7 @@ Propose a new_skill only when the email type is entirely unhandled by any existi
 # ── Loaders ─────────────────────────────────────────────────────────────────
 
 def load_all_skills() -> dict[str, dict]:
-    """Return {skill_name: {queue, types, tools, content}} for all active skills."""
+    """Return {skill_name: {agent, types, tools, content}} for all active skills."""
     return skills_db.load_all_sync()
 
 
@@ -150,7 +150,7 @@ def generate_proposals(
         fm = (
             f"---\n"
             f"name: {skill_name}\n"
-            f"queue: {skill_info['queue']}\n"
+            f"agent: {skill_info['agent']}\n"
             f"types: {skill_info['types']}\n"
             f"tools: {skill_info['tools']}\n"
             f"---\n\n"
@@ -260,15 +260,15 @@ async def _apply_proposals_async(client: Client, all_proposals: list[dict]) -> N
         if ptype in ("skill_edit", "new_skill"):
             meta, body = _parse_frontmatter(p["new_content"])
             name  = meta.get("name", "unknown")
-            queue = meta.get("queue", "")
+            agent = meta.get("agent", "")
             types = meta.get("types", [])
             tools = meta.get("tools", [])
             try:
                 if ptype == "skill_edit":
-                    ver = await skills_db.upsert_version(name, queue, types, tools, body)
+                    ver = await skills_db.upsert_version(name, agent, types, tools, body)
                     print(f"  Skill updated: {name} → v{ver}")
                 else:
-                    await skills_db.insert_new(name, queue, types, tools, body)
+                    await skills_db.insert_new(name, agent, types, tools, body)
                     print(f"  New skill created: {name} v1")
             except Exception as exc:
                 log.error("Skill DB write failed for '%s': %s", name, exc)

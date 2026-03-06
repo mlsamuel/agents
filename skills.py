@@ -5,16 +5,16 @@ On first call to get_pool():
   - Connects to DATABASE_URL
   - Creates the skills table if not present
   - Seeds from skills/**/*.md if the table is empty
-  - Populates the in-memory cache (queue → list of skill dicts)
+  - Populates the in-memory cache (agent → list of skill dicts)
 
 Public sync API (safe to call anywhere, including inside asyncio.run()):
-  load_sync(queue)   -> list[dict]   — active skills for a queue (from cache)
+  load_sync(agent)   -> list[dict]   — active skills for an agent key (from cache)
   load_all_sync()    -> dict         — all active skills keyed by name (from cache)
 
 Public async API (for improver --apply):
   get_pool()                                    — init + seed + cache
-  upsert_version(name, queue, types, tools, content) -> int  — new version, deactivates old
-  insert_new(name, queue, types, tools, content)             — v1 for a brand-new skill
+  upsert_version(name, agent, types, tools, content) -> int  — new version, deactivates old
+  insert_new(name, agent, types, tools, content)             — v1 for a brand-new skill
 """
 
 import json
@@ -29,14 +29,14 @@ from logger import get_logger
 log = get_logger(__name__)
 
 _pool: asyncpg.Pool | None = None
-_cache: dict[str, list[dict]] = {}   # queue_key → [{name, types, tools, system_prompt}]
+_cache: dict[str, list[dict]] = {}   # agent_key → [{name, types, tools, system_prompt}]
 _SKILLS_DIR = Path(__file__).parent / "data" / "skills"
 
 _SCHEMA = """
 CREATE TABLE IF NOT EXISTS skills (
     id         SERIAL PRIMARY KEY,
     name       TEXT NOT NULL,
-    queue      TEXT NOT NULL,
+    agent      TEXT NOT NULL,
     version    INT  NOT NULL DEFAULT 1,
     is_active  BOOLEAN NOT NULL DEFAULT TRUE,
     types      TEXT[] NOT NULL,
@@ -71,18 +71,18 @@ async def _seed(conn: asyncpg.Connection) -> None:
 
     rows = []
     for md in sorted(_SKILLS_DIR.glob("**/*.md")):
-        queue = md.parent.name   # directory name = queue key (e.g. "billing")
+        agent = md.parent.name   # directory name = agent key (e.g. "billing")
         meta, body = _parse_frontmatter(md.read_text())
         rows.append((
             meta.get("name", md.stem),
-            queue,
+            agent,
             meta.get("types", []),
             meta.get("tools", []),
             body,
         ))
 
     await conn.executemany(
-        """INSERT INTO skills (name, queue, version, is_active, types, tools, content)
+        """INSERT INTO skills (name, agent, version, is_active, types, tools, content)
            VALUES ($1, $2, 1, TRUE, $3, $4, $5)
            ON CONFLICT (name, version) DO NOTHING""",
         rows,
@@ -93,20 +93,20 @@ async def _seed(conn: asyncpg.Connection) -> None:
 async def _populate_cache(conn: asyncpg.Connection) -> None:
     global _cache
     rows = await conn.fetch(
-        "SELECT name, queue, types, tools, content FROM skills WHERE is_active = TRUE"
+        "SELECT name, agent, types, tools, content FROM skills WHERE is_active = TRUE"
     )
     cache: dict[str, list[dict]] = {}
     for r in rows:
-        q = r["queue"]
+        q = r["agent"]
         cache.setdefault(q, []).append({
             "name": r["name"],
-            "queue": q,
+            "agent": q,
             "types": list(r["types"]),
             "tools": list(r["tools"]),
             "system_prompt": r["content"],
         })
     _cache = cache
-    log.debug("skills: cache loaded — %d queues, %d skills total",
+    log.debug("skills: cache loaded — %d agents, %d skills total",
               len(_cache), sum(len(v) for v in _cache.values()))
 
 
@@ -130,21 +130,21 @@ async def get_pool() -> asyncpg.Pool:
 
 # ── Sync read API (safe inside asyncio.run() — reads from cache) ──────────────
 
-def load_sync(queue: str) -> list[dict]:
-    """Return active skills for the given queue key. Falls back to 'general' if empty."""
-    result = _cache.get(queue)
+def load_sync(agent: str) -> list[dict]:
+    """Return active skills for the given agent key. Falls back to 'general' if empty."""
+    result = _cache.get(agent)
     if not result:
         result = _cache.get("general", [])
     return result
 
 
 def load_all_sync() -> dict[str, dict]:
-    """Return all active skills as {name: {queue, types, tools, content}} for improver."""
+    """Return all active skills as {name: {agent, types, tools, content}} for improver."""
     out: dict[str, dict] = {}
     for skills_list in _cache.values():
         for s in skills_list:
             out[s["name"]] = {
-                "queue":   s["queue"],
+                "agent":   s["agent"],
                 "types":   s["types"],
                 "tools":   s["tools"],
                 "content": s["system_prompt"],
@@ -155,7 +155,7 @@ def load_all_sync() -> dict[str, dict]:
 # ── Async write API (for improver --apply) ───────────────────────────────
 
 async def upsert_version(
-    name: str, queue: str, types: list, tools: list, content: str
+    name: str, agent: str, types: list, tools: list, content: str
 ) -> int:
     """Deactivate all existing versions and insert a new active one. Returns new version."""
     pool = await get_pool()
@@ -168,9 +168,9 @@ async def upsert_version(
                 "SELECT COALESCE(MAX(version), 0) + 1 FROM skills WHERE name = $1", name
             )
             await conn.execute(
-                """INSERT INTO skills (name, queue, version, is_active, types, tools, content)
+                """INSERT INTO skills (name, agent, version, is_active, types, tools, content)
                    VALUES ($1, $2, $3, TRUE, $4, $5, $6)""",
-                name, queue, new_ver, types, tools, content,
+                name, agent, new_ver, types, tools, content,
             )
         await _populate_cache(conn)
     log.info("skills: upserted '%s' → v%d", name, new_ver)
@@ -178,16 +178,16 @@ async def upsert_version(
 
 
 async def insert_new(
-    name: str, queue: str, types: list, tools: list, content: str
+    name: str, agent: str, types: list, tools: list, content: str
 ) -> None:
     """Insert a brand-new skill at version 1."""
     pool = await get_pool()
     async with pool.acquire() as conn:
         await conn.execute(
-            """INSERT INTO skills (name, queue, version, is_active, types, tools, content)
+            """INSERT INTO skills (name, agent, version, is_active, types, tools, content)
                VALUES ($1, $2, 1, TRUE, $3, $4, $5)
                ON CONFLICT (name, version) DO NOTHING""",
-            name, queue, types, tools, content,
+            name, agent, types, tools, content,
         )
         await _populate_cache(conn)
     log.info("skills: inserted new skill '%s' v1", name)

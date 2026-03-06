@@ -1,6 +1,6 @@
 ---
 name: general_inquiry
-queue: General
+agent: general
 types: [Incident, Problem, Request, Change, Question, Complaint]
 tools: [lookup_customer, search_knowledge_base, create_ticket, send_reply]
 ---

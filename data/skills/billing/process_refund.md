@@ -1,6 +1,6 @@
 ---
 name: process_refund
-queue: Billing and Payments
+agent: billing
 types: [Incident, Request]
 tools: [lookup_customer, search_knowledge_base, check_order_status, process_refund, create_ticket, send_reply]
 ---

@@ -1,6 +1,6 @@
 ---
 name: handle_request
-queue: Technical Support
+agent: technical_support
 types: [Request, Change]
 tools: [lookup_customer, search_knowledge_base, create_ticket, send_reply, run_code]
 ---

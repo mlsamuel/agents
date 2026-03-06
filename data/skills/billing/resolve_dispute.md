@@ -1,6 +1,6 @@
 ---
 name: resolve_dispute
-queue: Billing and Payments
+agent: billing
 types: [Complaint, Problem]
 tools: [lookup_customer, search_knowledge_base, get_ticket_history, create_ticket, escalate_to_human, send_reply]
 ---
