@@ -72,6 +72,23 @@
     ]
   },
   {
+    "id": 9,
+    "category": "technical_support",
+    "topic": "Proactive call scheduling for critical application access issues",
+    "trigger": "Customer reports inability to access critical business applications (e.g. Microsoft Office) where immediate access is essential for their work, especially when the issue affects multiple users or devices.",
+    "instruction": "Offer to schedule a call at a convenient time to guide the customer through advanced troubleshooting steps. Ask them to share their availability so a specialist can assist them directly.",
+    "keywords": [
+      "schedule call",
+      "Microsoft Office",
+      "unable to access",
+      "critical access",
+      "troubleshooting call",
+      "availability",
+      "macOS",
+      "critical applications"
+    ]
+  },
+  {
     "id": 8,
     "category": "general",
     "topic": "Big data or analytics system upgrade requests",

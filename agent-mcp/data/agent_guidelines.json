@@ -1,6 +1,22 @@
 [
   {
     "category": "technical_support",
+    "topic": "Proactive call scheduling for critical application access issues",
+    "trigger": "Customer reports inability to access critical business applications (e.g. Microsoft Office) where immediate access is essential for their work, especially when the issue affects multiple users or devices.",
+    "instruction": "Offer to schedule a call at a convenient time to guide the customer through advanced troubleshooting steps. Ask them to share their availability so a specialist can assist them directly.",
+    "keywords": [
+      "schedule call",
+      "Microsoft Office",
+      "unable to access",
+      "critical access",
+      "troubleshooting call",
+      "availability",
+      "macOS",
+      "critical applications"
+    ]
+  },
+  {
+    "category": "technical_support",
     "topic": "CI/CD pipeline documentation requests",
     "trigger": "A customer requests CI/CD pipeline documentation, setup guides, or related materials without specifying their project environment or tooling.",
     "instruction": "Do not create a ticket yet. Ask the customer to specify: (1) the project environment they are referring to, and (2) which CI/CD tools or platforms their team uses (e.g. Jenkins, GitLab CI, GitHub Actions, CircleCI, etc.). Also ask about any access requirements or specific steps needed to deliver the documentation. Only once this information is provided should you create a ticket and arrange for documentation covering setup, configuration, best practices, and sample templates.",

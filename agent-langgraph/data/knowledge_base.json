@@ -403,23 +403,6 @@
     ]
   },
   {
-    "id": 28,
-    "category": "general",
-    "topic": "Proactive call scheduling for critical application access issues",
-    "question": "Should support offer to schedule a call when a customer cannot access critical applications like Microsoft Office?",
-    "answer": "When a customer reports being unable to access critical business applications such as Microsoft Office, and immediate access is essential for their work, offer to schedule a call at a convenient time to guide them through advanced troubleshooting steps. This is especially important when the issue affects multiple users or devices. Ask the customer to share their availability so a specialist can assist them directly.",
-    "keywords": [
-      "schedule call",
-      "Office",
-      "macOS",
-      "Microsoft Office",
-      "unable to access",
-      "critical access",
-      "troubleshooting call",
-      "availability"
-    ]
-  },
-  {
     "id": 29,
     "category": "general",
     "topic": "QuickBooks Online subscription plans and institutional pricing",

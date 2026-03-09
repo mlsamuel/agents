@@ -52,18 +52,29 @@ fully described in the reply itself.
 
 The `answer` must be customer-facing prose — as if appearing on a help page. It must NOT
 contain agent-perspective phrases ("request their", "ask the customer", "you must first",
-"once this information is provided"). If answering requires gathering more information
-first, use agent_guideline instead.
+"once this information is provided", "we do not create", "do not escalate", "we skip").
+If the answer describes what the agent should do — not just facts to relay to the customer
+— use agent_guideline instead.
 
-### agent_guideline — information collection pattern
-Propose an agent_guideline when the ground truth shows the agent asking the customer for
-more information before acting — e.g. account numbers, dates, platform details, environment
-specifications, access requirements. Capture what situation triggers this and exactly what
-to collect.
+### agent_guideline — agent behaviour pattern
+Propose an agent_guideline when the ground truth shows the agent following a specific
+behavioural pattern rather than relaying a customer-facing fact. This covers three cases:
 
-The `trigger` describes the situation (customer-facing perspective). The `instruction`
-states what to ask for and why, written from the agent's perspective ("Ask the customer
-for their account number and the specific transaction dates and amounts.").
+- **Information collection**: asking for account numbers, dates, platform details,
+  environment specs, or other prerequisites before acting.
+- **Workflow exceptions**: taking a different action when a condition is met — e.g. do
+  NOT create a ticket when a known outage is confirmed; skip the refund step and escalate
+  when fraud signals are present.
+- **Decision rules**: choosing between two actions based on context — customer tier,
+  issue type, ticket history.
+
+The `trigger` describes the situation from the agent's perspective ("Customer reports an
+issue that matches a known active system outage"). The `instruction` states exactly what
+the agent should do ("Do not create a ticket. Acknowledge the outage directly, confirm the
+team is working on it, and provide an ETA or status update if available.").
+
+Never use agent_guideline for factual content (policies, prices, procedures) the agent
+only needs to relay verbatim — use kb_entry for those.
 
 ### skill_edit — wrong workflow or action
 Propose a skill_edit ONLY when the eval comment explicitly identifies a process error:
