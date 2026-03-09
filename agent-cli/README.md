@@ -1,6 +1,6 @@
 # Customer Support Agent System — CLI Edition
 
-A multi-agent customer support pipeline built with Claude and a CLI tool interface. Emails are classified, routed to specialist workflow agents, and handled using skill files that drive tool selection and reply logic. An integrated eval+improve loop scores replies and automatically updates skills, the knowledge base, and agent guidelines.
+A multi-agent customer support pipeline built with Claude and a CLI tool interface. Emails are classified, routed to specialist workflow agents, and handled using skill files that drive tool selection and reply logic. An integrated eval+improve loop scores replies and automatically updates skills, the knowledge base, and agent guidelines. Every eval run is persisted to Postgres and can be viewed as a self-contained HTML showcase.
 
 This project is a variant of `agent-mcp` that replaces the MCP server with a CLI interface: instead of connecting to a protocol server over HTTP, workflow agents invoke `cli.py` as a subprocess and parse its structured JSON output — the same pattern used by [googleworkspace/cli](https://github.com/googleworkspace/cli).
 
@@ -36,19 +36,20 @@ merged reply + WorkflowResult
     │
     ▼  (when --eval)
 evaluator                     ← Haiku: scores action / completeness / tone
-    │
+    │                            results written to pipeline_results table
     ▼  (when --improve and avg < --min-score)
 improver                      ← Sonnet: proposes skill_edit / kb_entry /
     │                            agent_guideline / new_skill
     │                            pgvector similarity check before insert/merge
     │                            regression test on training_set after apply
     ▼
-Postgres (skills + knowledge_base + agent_guidelines + training_set tables)
+Postgres (skills + knowledge_base + agent_guidelines + training_set +
+          pipeline_runs + pipeline_results tables)
 ```
 
 ### CLI tool interface
 
-Tools are implemented in `tools.py` and exposed as CLI commands via `cli.py`:
+Tools are defined in `tool_registry.py` (single source of truth) and exposed as CLI commands via `cli.py`:
 
 ```
 python cli.py <namespace> <command> [--flags]
@@ -64,7 +65,7 @@ python cli.py <namespace> <command> [--flags]
 
 Every command outputs structured JSON to stdout. See [SKILL.md](SKILL.md) for the full command reference with example inputs and outputs.
 
-When Claude calls a tool, `workflow_agent.py` maps the tool name to a CLI command, runs it via `subprocess.run`, and feeds the JSON stdout back as the tool result — no sockets, no protocol server.
+When Claude calls a tool, `workflow_agent.py` maps the tool name to a CLI command using `tool_registry.BY_NAME`, runs it via `subprocess.run`, and feeds the JSON stdout back as the tool result — no sockets, no protocol server.
 
 ## Setup
 
@@ -149,6 +150,33 @@ python cli.py orders check-status --order-ref ORD-00123456
 python cli.py kb search --query "refund policy" --category billing
 ```
 
+## Showcase UI
+
+Every pipeline eval run is automatically stored in Postgres (`pipeline_runs` + `pipeline_results` tables). You can view results three ways:
+
+### Static HTML (no servers needed)
+
+```bash
+python ui/export_showcase.py            # latest run → ui/showcase/index.html
+python ui/export_showcase.py --run 3   # specific run id
+open ui/showcase/index.html
+```
+
+Generates a fully self-contained file with data, CSS, and JS inlined — open it with a double-click in any browser. The file at `ui/showcase/index.html` is committed to the repo.
+
+### Live UI (React + FastAPI)
+
+```bash
+# Terminal 1 — backend
+cd ui/backend && pip install -r requirements.txt
+uvicorn main:app --port 8000 --reload
+
+# Terminal 2 — frontend (requires Node 18+)
+cd ui/frontend && npm install && npm run dev
+```
+
+Open http://localhost:5173 — run selector dropdown, expandable cards, side-by-side ground truth vs generated reply, colour-coded scores.
+
 ## How the improve loop works
 
 After each email is scored, if the average is below `--min-score`, the improver analyses the skill used and proposes targeted changes.
@@ -173,7 +201,9 @@ After each email is scored, if the average is below `--min-score`, the improver 
 ```
 agent-cli/
 ├── pipeline.py               # unified entry point: screen → classify → orchestrate → eval → improve
+│                             #   stores every eval run to pipeline_runs + pipeline_results
 ├── cli.py                    # Click CLI — exposes all tools as JSON-output commands
+├── tool_registry.py          # single source of truth: tool name → CLI routing + Anthropic schema
 ├── tools.py                  # pure tool implementations (no framework dependency)
 ├── SKILL.md                  # CLI command reference for agents and humans
 ├── classifier.py             # email classifier (Haiku)
@@ -185,7 +215,8 @@ agent-cli/
 ├── evaluator.py              # LLM-as-judge scoring (judge, append_section)
 ├── improver.py               # eval-driven skill/KB improvement (generate_proposals, apply_proposals)
 ├── store.py                  # asyncpg pool, schema bootstrap, pgvector search/insert/upsert
-│                             #   (knowledge_base + agent_guidelines + training_set)
+│                             #   tables: knowledge_base, agent_guidelines, training_set,
+│                             #           pipeline_runs, pipeline_results
 ├── skills.py                 # asyncpg pool, skill loading and versioning
 ├── logger.py                 # shared logging config
 ├── client.py                 # Anthropic client wrapper with retry and per-model cost tracking
@@ -195,11 +226,29 @@ agent-cli/
 │   ├── general/
 │   ├── returns/
 │   └── technical_support/   # seed source — loaded to DB on first run
+│                             #   NOTE: DB is the live source; seed files reflect the latest
+│                             #   active version but may lag behind DB after improve runs
 └── data/
     ├── emails.csv            # email dataset (subject, body, answer, type, queue, priority, language)
     ├── knowledge_base.json   # seed source — loaded to knowledge_base table on first run
     ├── agent_guidelines.json # seed source — loaded to agent_guidelines table on first run
     └── training_set.json     # seed source — loaded to training_set table on first run
+ui/
+├── export_showcase.py        # queries DB → writes self-contained ui/showcase/index.html
+├── showcase/
+│   └── index.html            # committed static showcase (regenerate with export_showcase.py)
+├── backend/
+│   ├── main.py               # FastAPI: GET /api/runs, GET /api/runs/{id}/results
+│   └── requirements.txt
+└── frontend/                 # React 18 + Vite + TypeScript
+    ├── src/
+    │   ├── App.tsx
+    │   ├── types.ts
+    │   └── components/
+    │       ├── RunSelector.tsx
+    │       └── ResultCard.tsx
+    ├── package.json
+    └── vite.config.ts        # proxies /api → localhost:8000
 ```
 
 ## Skills
@@ -217,3 +266,12 @@ You are a refund specialist...
 ```
 
 `agent` must be one of `billing`, `returns`, `technical_support`, `general`. `types` and `tools` are stored in the DB and used for routing and tool filtering. The improver can update skills in-place (new versioned row, old row deactivated) without touching the seed files.
+
+## Adding or changing tools
+
+All tool definitions live in `tool_registry.py`. Each entry is a dict with routing fields (`namespace`, `cli_command`, `params`) and the Anthropic tool schema (`description`, `input_schema`). Derived views (`BY_NAME`, `BY_NAMESPACE`, `SCHEMAS`) are imported by `workflow_agent.py`, `cli.py`, and the Docker sandbox runner — no other files need updating.
+
+To add a tool:
+1. Add a dict to `TOOLS` in `tool_registry.py`
+2. Add the Click command to `cli.py`
+3. Implement the logic in `tools.py`
