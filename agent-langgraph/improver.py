@@ -51,29 +51,39 @@ contain agent-perspective phrases ("request their", "ask the customer", "you mus
 If the answer describes what the agent should do — not just facts to relay to the customer
 — use agent_guideline instead.
 
+### skill_edit — wrong workflow or action
+Propose a skill_edit when the eval comment identifies a process error in the skill's
+workflow: wrong action taken, wrong tool used, wrong order of steps, or a decision
+rule that overrides another step being applied in the wrong order (e.g. escalation
+firing before an outage check that should take priority).
+
+**skill_edit takes priority over agent_guideline** when the failure is caused by the
+skill's own workflow steps conflicting or executing in the wrong order. If fixing the
+skill's step ordering or adding an explicit override rule would prevent the failure,
+use skill_edit — not agent_guideline.
+
 ### agent_guideline — agent behaviour pattern
 Propose an agent_guideline when the ground truth shows the agent following a specific
-behavioural pattern rather than relaying a customer-facing fact. This covers three cases:
+behavioural pattern that is **not already covered by any step in the skill's workflow**.
+This covers three cases:
 
 - **Information collection**: asking for account numbers, dates, platform details,
-  environment specs, or other prerequisites before acting.
-- **Workflow exceptions**: taking a different action when a condition is met — e.g. do
-  NOT create a ticket when a known outage is confirmed; skip the refund step and escalate
-  when fraud signals are present.
-- **Decision rules**: choosing between two actions based on context — customer tier,
-  issue type, ticket history.
+  environment specs, or other prerequisites before acting — when the skill has no step
+  requiring this information.
+- **Workflow exceptions**: taking a different action when a condition is met that the
+  skill does not address — e.g. skipping the refund step and escalating when fraud
+  signals are present.
+- **Decision rules**: choosing between two actions based on context (customer tier,
+  issue type, ticket history) when the skill gives no guidance on this choice.
 
-The `trigger` describes the situation from the agent's perspective ("Customer reports an
-issue that matches a known active system outage"). The `instruction` states exactly what
-the agent should do ("Do not create a ticket. Acknowledge the outage directly, confirm the
-team is working on it, and provide an ETA or status update if available.").
+Do NOT use agent_guideline if the skill already has (or should have) a step covering
+this behaviour — fix the skill with skill_edit instead.
+
+The `trigger` describes the situation from the agent's perspective. The `instruction`
+states exactly what the agent should do.
 
 Never use agent_guideline for factual content (policies, prices, procedures) the agent
 only needs to relay verbatim — use kb_entry for those.
-
-### skill_edit — wrong workflow or action
-Propose a skill_edit ONLY when the eval comment explicitly identifies a process error:
-wrong action taken, wrong tool used, wrong order of steps.
 
 ### new_skill (rare)
 Propose a new_skill only when the email type is entirely unhandled by any existing skill.
