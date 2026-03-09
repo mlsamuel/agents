@@ -5,7 +5,12 @@
     "topic": "Billing cycle dates",
     "question": "When does my billing cycle start and end?",
     "answer": "The billing period begins on the first day of the month and ends on the last day of the month. Payment is due by the 10th of the following month.",
-    "keywords": ["billing cycle", "start date", "end date", "billing period"]
+    "keywords": [
+      "billing cycle",
+      "start date",
+      "end date",
+      "billing period"
+    ]
   },
   {
     "id": 2,
@@ -13,7 +18,11 @@
     "topic": "Payment due date",
     "question": "When is my payment due?",
     "answer": "Payments are due by the 10th of the month following your billing period. For example, charges from January are due by February 10th.",
-    "keywords": ["payment due", "due date", "when to pay"]
+    "keywords": [
+      "payment due",
+      "due date",
+      "when to pay"
+    ]
   },
   {
     "id": 3,
@@ -21,15 +30,26 @@
     "topic": "Accepted payment methods",
     "question": "What payment methods do you accept?",
     "answer": "We accept credit cards (Visa, Mastercard, American Express), bank transfers, and major online payment services such as PayPal. Credit card transactions are typically processed the quickest.",
-    "keywords": ["payment methods", "credit card", "bank transfer", "PayPal", "how to pay"]
+    "keywords": [
+      "payment methods",
+      "credit card",
+      "bank transfer",
+      "PayPal",
+      "how to pay"
+    ]
   },
   {
     "id": 4,
     "category": "billing",
     "topic": "Credit card processing speed",
     "question": "How quickly are credit card payments processed?",
-    "answer": "Credit card payments are typically processed within 1\u20132 business days, making them the fastest payment option we offer. Bank transfers may take 3\u20135 business days to clear.",
-    "keywords": ["credit card", "processing time", "payment speed", "how long"]
+    "answer": "Credit card payments are typically processed within 1–2 business days, making them the fastest payment option we offer. Bank transfers may take 3–5 business days to clear.",
+    "keywords": [
+      "credit card",
+      "processing time",
+      "payment speed",
+      "how long"
+    ]
   },
   {
     "id": 5,
@@ -37,7 +57,12 @@
     "topic": "Late payment fees",
     "question": "What happens if I pay late?",
     "answer": "Late payments may incur a late fee based on the number of days past the due date. We recommend contacting our billing team before the due date if you anticipate a delay, as we can often arrange a short grace period.",
-    "keywords": ["late payment", "late fee", "overdue", "penalty"]
+    "keywords": [
+      "late payment",
+      "late fee",
+      "overdue",
+      "penalty"
+    ]
   },
   {
     "id": 6,
@@ -45,7 +70,13 @@
     "topic": "Extra and processing charges",
     "question": "Are there any extra or additional charges on my invoice?",
     "answer": "Additional processing charges may apply depending on your chosen payment method. Bank transfers may carry a small processing fee, while credit card payments are typically included in your plan. Any applicable surcharges are itemised on your invoice.",
-    "keywords": ["extra charges", "additional fees", "processing fee", "surcharge", "invoice"]
+    "keywords": [
+      "extra charges",
+      "additional fees",
+      "processing fee",
+      "surcharge",
+      "invoice"
+    ]
   },
   {
     "id": 7,
@@ -53,7 +84,13 @@
     "topic": "Viewing invoices and statements",
     "question": "How can I view or download my invoice?",
     "answer": "You can view and download your invoices and payment statements directly from the Billing section of your account portal. Invoices are generated automatically at the end of each billing period and are also emailed to your registered address.",
-    "keywords": ["invoice", "statement", "download", "view invoice", "billing history"]
+    "keywords": [
+      "invoice",
+      "statement",
+      "download",
+      "view invoice",
+      "billing history"
+    ]
   },
   {
     "id": 8,
@@ -61,7 +98,12 @@
     "topic": "Updating payment method",
     "question": "How do I update or change my payment method?",
     "answer": "You can update your payment method at any time in the Billing section of your account settings. Changes take effect from the next billing cycle. If you need to update it urgently before an upcoming payment, please contact our billing team directly.",
-    "keywords": ["update payment", "change payment", "new credit card", "payment method"]
+    "keywords": [
+      "update payment",
+      "change payment",
+      "new credit card",
+      "payment method"
+    ]
   },
   {
     "id": 9,
@@ -69,7 +111,12 @@
     "topic": "Accepted payment options",
     "question": "What accepted payment options are available for my account?",
     "answer": "We accept credit cards (Visa, Mastercard, American Express), bank transfers, and major online payment services such as PayPal. Credit card transactions are typically processed the quickest.",
-    "keywords": ["accepted payment options", "payment options", "payment procedures", "how to pay"]
+    "keywords": [
+      "accepted payment options",
+      "payment options",
+      "payment procedures",
+      "how to pay"
+    ]
   },
   {
     "id": 10,
@@ -77,7 +124,13 @@
     "topic": "Potential extra charges",
     "question": "What potential extra charges could appear on my bill?",
     "answer": "Additional processing charges may apply depending on your chosen payment method. Bank transfers may carry a small processing fee, while credit card payments are typically included in your plan. Any applicable surcharges are clearly itemised on your invoice so you can see exactly what you have been charged.",
-    "keywords": ["potential extra charges", "unexpected charges", "additional costs", "extra fees", "billing inconsistencies"]
+    "keywords": [
+      "potential extra charges",
+      "unexpected charges",
+      "additional costs",
+      "extra fees",
+      "billing inconsistencies"
+    ]
   },
   {
     "id": 11,
@@ -85,7 +138,12 @@
     "topic": "Return window",
     "question": "How long do I have to return a product?",
     "answer": "Our standard return window is 30 days from the date of delivery. Items must be in their original condition and packaging. Some product categories (e.g. personalised or digital goods) are not eligible for return.",
-    "keywords": ["return window", "how long to return", "return period", "30 days"]
+    "keywords": [
+      "return window",
+      "how long to return",
+      "return period",
+      "30 days"
+    ]
   },
   {
     "id": 12,
@@ -93,15 +151,26 @@
     "topic": "How to initiate a return",
     "question": "How do I start a return or exchange?",
     "answer": "To initiate a return, log in to your account, go to Order History, and select the item you wish to return. Follow the on-screen instructions to generate a prepaid return label. You can also contact our support team and we will guide you through the process.",
-    "keywords": ["start return", "initiate return", "how to return", "return label", "exchange"]
+    "keywords": [
+      "start return",
+      "initiate return",
+      "how to return",
+      "return label",
+      "exchange"
+    ]
   },
   {
     "id": 13,
     "category": "returns",
     "topic": "Refund timeline",
     "question": "How long does a refund take?",
-    "answer": "Once we receive and inspect your returned item, refunds are typically processed within 5\u20137 business days. Credit card refunds may take an additional 3\u20135 business days to appear on your statement depending on your card issuer.",
-    "keywords": ["refund timeline", "how long refund", "when refund", "refund processing"]
+    "answer": "Once we receive and inspect your returned item, refunds are typically processed within 5–7 business days. Credit card refunds may take an additional 3–5 business days to appear on your statement depending on your card issuer.",
+    "keywords": [
+      "refund timeline",
+      "how long refund",
+      "when refund",
+      "refund processing"
+    ]
   },
   {
     "id": 14,
@@ -109,7 +178,13 @@
     "topic": "Non-returnable items",
     "question": "What items cannot be returned?",
     "answer": "Items that are not eligible for return include: personalised or custom-made products, digital downloads once accessed, perishable goods, and items marked as final sale. Please check the product page before purchasing for any specific restrictions.",
-    "keywords": ["non-returnable", "cannot return", "ineligible", "final sale", "no returns"]
+    "keywords": [
+      "non-returnable",
+      "cannot return",
+      "ineligible",
+      "final sale",
+      "no returns"
+    ]
   },
   {
     "id": 15,
@@ -117,7 +192,12 @@
     "topic": "Password reset",
     "question": "How do I reset my password?",
     "answer": "To reset your password, click 'Forgot Password' on the login page and enter your registered email address. You will receive a password reset link within a few minutes. If you do not receive the email, please check your spam folder or contact support.",
-    "keywords": ["password reset", "forgot password", "change password", "login"]
+    "keywords": [
+      "password reset",
+      "forgot password",
+      "change password",
+      "login"
+    ]
   },
   {
     "id": 16,
@@ -125,7 +205,13 @@
     "topic": "Reporting a service outage",
     "question": "How do I report a service outage or downtime?",
     "answer": "If you are experiencing a service outage, please contact our Technical Support team immediately so we can investigate and escalate as needed. You can also check our system status page for any known incidents. We aim to respond to outage reports within 30 minutes.",
-    "keywords": ["service outage", "downtime", "system down", "not working", "report outage"]
+    "keywords": [
+      "service outage",
+      "downtime",
+      "system down",
+      "not working",
+      "report outage"
+    ]
   },
   {
     "id": 17,
@@ -133,23 +219,40 @@
     "topic": "Supported browsers",
     "question": "Which browsers are supported?",
     "answer": "Our platform supports the latest two versions of Chrome, Firefox, Safari, and Microsoft Edge. For the best experience we recommend using Google Chrome. Internet Explorer is not supported.",
-    "keywords": ["supported browsers", "browser", "Chrome", "Firefox", "Safari", "Edge"]
+    "keywords": [
+      "supported browsers",
+      "browser",
+      "Chrome",
+      "Firefox",
+      "Safari",
+      "Edge"
+    ]
   },
   {
     "id": 18,
     "category": "general",
     "topic": "Contacting support",
     "question": "How do I contact customer support?",
-    "answer": "You can reach our customer support team by email, live chat, or phone. Our support portal is available 24/7 for submitting tickets, and live agents are available Monday to Friday, 9am\u20136pm in your local timezone.",
-    "keywords": ["contact support", "customer service", "help", "reach support"]
+    "answer": "You can reach our customer support team by email, live chat, or phone. Our support portal is available 24/7 for submitting tickets, and live agents are available Monday to Friday, 9am–6pm in your local timezone.",
+    "keywords": [
+      "contact support",
+      "customer service",
+      "help",
+      "reach support"
+    ]
   },
   {
     "id": 19,
     "category": "general",
     "topic": "Support hours",
     "question": "What are your support hours?",
-    "answer": "Live agent support is available Monday to Friday, 9am\u20136pm in your local timezone. Outside of these hours, you can submit a ticket through our support portal and we will respond on the next business day. Emergency technical support is available 24/7 for enterprise customers.",
-    "keywords": ["support hours", "opening hours", "when available", "business hours"]
+    "answer": "Live agent support is available Monday to Friday, 9am–6pm in your local timezone. Outside of these hours, you can submit a ticket through our support portal and we will respond on the next business day. Emergency technical support is available 24/7 for enterprise customers.",
+    "keywords": [
+      "support hours",
+      "opening hours",
+      "when available",
+      "business hours"
+    ]
   },
   {
     "id": 20,
@@ -157,7 +260,14 @@
     "topic": "Account tiers and plans",
     "question": "What are the different account tiers?",
     "answer": "We offer three account tiers: Standard, Premium, and Enterprise. Standard provides core features with email support. Premium adds priority support and advanced features. Enterprise includes dedicated account management, SLA guarantees, and 24/7 emergency support. Contact our sales team for pricing.",
-    "keywords": ["account tier", "pricing", "plans", "standard", "premium", "enterprise"]
+    "keywords": [
+      "account tier",
+      "pricing",
+      "plans",
+      "standard",
+      "premium",
+      "enterprise"
+    ]
   },
   {
     "id": 21,
@@ -165,7 +275,18 @@
     "topic": "Financial products overview",
     "question": "What financial products or investment and savings solutions do you offer?",
     "answer": "We offer a diverse selection of investment and savings solutions tailored to various needs, including high-yield savings accounts, fixed-term deposits, mutual funds, and retirement plans. Each product features specific benefits, interest rates, fees, and minimum deposit requirements, and caters to different risk levels suitable for various customer profiles. Detailed brochures covering all these aspects are available, along with information on current promotional offers.",
-    "keywords": ["financial products", "investment", "savings", "high-yield savings", "fixed-term deposits", "mutual funds", "retirement plans", "interest rates", "fees", "promotions"]
+    "keywords": [
+      "financial products",
+      "investment",
+      "savings",
+      "high-yield savings",
+      "fixed-term deposits",
+      "mutual funds",
+      "retirement plans",
+      "interest rates",
+      "fees",
+      "promotions"
+    ]
   },
   {
     "id": 22,
@@ -173,7 +294,18 @@
     "topic": "Marketing services overview",
     "question": "What marketing packages or digital marketing services do you offer?",
     "answer": "We offer a variety of digital and traditional marketing packages, including social media management, SEO, email marketing, content development, print advertising, and more. Our pricing is adaptable, allowing us to create customised plans that suit specific business requirements. Case studies relevant to a customer's industry are available upon request. To deliver tailored information, we may ask for details such as industry, business objectives, and budget preferences.",
-    "keywords": ["marketing packages", "digital marketing", "social media management", "SEO", "email marketing", "content development", "print advertising", "pricing", "customised plans", "case studies"]
+    "keywords": [
+      "marketing packages",
+      "digital marketing",
+      "social media management",
+      "SEO",
+      "email marketing",
+      "content development",
+      "print advertising",
+      "pricing",
+      "customised plans",
+      "case studies"
+    ]
   },
   {
     "id": 23,
@@ -181,7 +313,18 @@
     "topic": "Scheduled maintenance and service disruptions",
     "question": "What are the upcoming service disruptions and maintenance schedules, and who can customers contact during maintenance periods?",
     "answer": "Scheduled outages and maintenance windows in the near future are expected to impact big data lakes, analytical models, and automated investment platforms. Maintenance plans include advance notifications with detailed information about the timing, affected components, expected downtime, and recommended preparations. For urgent issues during maintenance periods, customers may contact the support hotline at <tel_num> to reach the designated support team.",
-    "keywords": ["maintenance", "service disruption", "outage", "downtime", "maintenance window", "big data", "analytical models", "automated investment", "support hotline", "scheduled maintenance"]
+    "keywords": [
+      "maintenance",
+      "service disruption",
+      "outage",
+      "downtime",
+      "maintenance window",
+      "big data",
+      "analytical models",
+      "automated investment",
+      "support hotline",
+      "scheduled maintenance"
+    ]
   },
   {
     "id": 24,
@@ -189,6 +332,110 @@
     "topic": "Seagate Expansion Drive integration for healthcare compliance",
     "question": "What are the best practices for integrating Seagate Expansion drives in a healthcare storage environment with HIPAA and GDPR compliance requirements?",
     "answer": "To integrate Seagate Expansion drives in a HIPAA and GDPR compliant healthcare environment, we recommend implementing hardware encryption, enforcing strict access controls, performing regular firmware updates, and adopting secure backup practices. To provide more precise advice tailored to your setup, please specify your operating system and storage environment.",
-    "keywords": ["Seagate", "expansion drive", "healthcare", "HIPAA", "GDPR", "compliance", "encryption", "access controls", "firmware updates", "backup", "storage"]
+    "keywords": [
+      "Seagate",
+      "expansion drive",
+      "healthcare",
+      "HIPAA",
+      "GDPR",
+      "compliance",
+      "encryption",
+      "access controls",
+      "firmware updates",
+      "backup",
+      "storage"
+    ]
+  },
+  {
+    "id": 25,
+    "category": "product",
+    "topic": "Smart Home System Integration and Compatibility",
+    "question": "What smart home systems and voice assistants are compatible with your products?",
+    "answer": "Our smart home products support integration with Amazon Alexa, Google Assistant, and Apple HomeKit. Compatibility details can vary depending on the specific model, so if you have particular devices in mind, please let us know which models you are interested in and we can provide more precise information. The setup process is generally user-friendly, though some installations may benefit from professional assistance. We regularly release software updates to expand and enhance compatibility features, so checking back for the latest firmware is always recommended.",
+    "keywords": [
+      "smart home",
+      "integration",
+      "Amazon Alexa",
+      "Google Assistant",
+      "Apple HomeKit",
+      "compatibility",
+      "voice assistant",
+      "home automation",
+      "setup",
+      "installation"
+    ]
+  },
+  {
+    "id": 26,
+    "category": "general",
+    "topic": "Marketing agency software compatibility and integrations",
+    "question": "What tools and platforms does your product integrate or work with?",
+    "answer": "Our product supports integration with major CRM, email marketing, and analytics platforms through APIs and customization options. If you let us know which specific tools you are using, we can provide you with detailed documentation and relevant case studies.",
+    "keywords": [
+      "compatibility",
+      "integration",
+      "CRM",
+      "email marketing",
+      "analytics",
+      "API",
+      "marketing tools",
+      "platforms",
+      "software",
+      "agency"
+    ]
+  },
+  {
+    "id": 27,
+    "category": "general",
+    "topic": "Upcoming maintenance schedules and service disruptions",
+    "question": "What are the upcoming planned maintenance activities and service disruptions?",
+    "answer": "Scheduled outages and maintenance windows in the near future are expected to impact big data lakes, analytical models, and automated investment platforms. Maintenance plans will include advance notifications with detailed information about the timing, affected components, expected downtime, and recommended preparations. For urgent issues during maintenance periods, you may contact our support hotline at <tel_num> to reach the designated support team.",
+    "keywords": [
+      "maintenance",
+      "scheduled outage",
+      "service disruption",
+      "downtime",
+      "maintenance window",
+      "big data",
+      "analytical models",
+      "investment platforms",
+      "maintenance schedule"
+    ]
+  },
+  {
+    "id": 28,
+    "category": "general",
+    "topic": "Proactive call scheduling for critical application access issues",
+    "question": "Should support offer to schedule a call when a customer cannot access critical applications like Microsoft Office?",
+    "answer": "When a customer reports being unable to access critical business applications such as Microsoft Office, and immediate access is essential for their work, offer to schedule a call at a convenient time to guide them through advanced troubleshooting steps. This is especially important when the issue affects multiple users or devices. Ask the customer to share their availability so a specialist can assist them directly.",
+    "keywords": [
+      "schedule call",
+      "Office",
+      "macOS",
+      "Microsoft Office",
+      "unable to access",
+      "critical access",
+      "troubleshooting call",
+      "availability"
+    ]
+  },
+  {
+    "id": 29,
+    "category": "general",
+    "topic": "QuickBooks Online subscription plans and institutional pricing",
+    "question": "What subscription plans and pricing options are available for QuickBooks Online for institutional or enterprise clients?",
+    "answer": "QuickBooks Online offers several subscription tiers with varying features to suit different organisational needs. For institutional clients, including those in the financial services sector, pricing discounts may be available based on your organisation's size and specific requirements. All plans support standard invoicing processes and flexible payment schedules. Comprehensive documentation covering current plans, pricing details, invoicing processes, payment schedules, and any applicable discounts or special terms can be provided upon request. If your organisation requires a fully customised quote or contract negotiation, our Sales team can assist with those details.",
+    "keywords": [
+      "QuickBooks Online",
+      "subscription",
+      "institutional pricing",
+      "enterprise billing",
+      "invoicing",
+      "payment schedule",
+      "financial services",
+      "pricing tiers",
+      "discounts",
+      "plans"
+    ]
   }
 ]

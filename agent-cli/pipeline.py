@@ -67,6 +67,8 @@ async def main():
     await kb.get_pool()
     await skills_db.get_pool()
 
+    run_id = await kb.create_run(args.limit, args.offset, args.language)
+
     client = Client()
     output_sections: list[dict] = []
 
@@ -184,6 +186,7 @@ async def main():
                     "avg":              avg,
                 }
                 output_sections.append(section)
+                await kb.store_result(run_id, section)
                 if args.save:
                     append_section(section, out_path, include_internal_summary=args.internal_summary)
 
@@ -254,6 +257,8 @@ async def main():
     if not run_eval:
         print(f"\n{client.usage_summary()}")
         return
+
+    await kb.update_run_stats(run_id, output_sections)
 
     # Aggregate stats
     if output_sections:

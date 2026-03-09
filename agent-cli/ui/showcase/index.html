@@ -1,0 +1,225 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>agent-cli showcase</title>
+  <style>
+:root {
+  --bg: #f5f6f8;
+  --surface: #ffffff;
+  --surface-2: #f0f1f4;
+  --border: #dde0e8;
+  --text: #1a1d2e;
+  --text-muted: #6b6f85;
+  --accent: #4361ee;
+  --green: #16a34a;
+  --amber: #b45309;
+  --red: #dc2626;
+  --green-bg: rgba(22, 163, 74, 0.10);
+  --amber-bg: rgba(180, 83, 9, 0.10);
+  --red-bg: rgba(220, 38, 38, 0.10);
+  font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
+  font-size: 14px;
+  color: var(--text);
+  background: var(--bg);
+}
+* { box-sizing: border-box; margin: 0; padding: 0; }
+
+.app { min-height: 100vh; display: flex; flex-direction: column; }
+
+.app-header {
+  display: flex; justify-content: space-between; align-items: center;
+  padding: 16px 24px; border-bottom: 1px solid var(--border);
+  background: var(--surface); position: sticky; top: 0; z-index: 10;
+}
+.header-left h1 { font-size: 17px; font-weight: 600; }
+.header-sub { font-size: 12px; color: var(--text-muted); margin-top: 2px; display: block; }
+.run-stats { display: flex; gap: 16px; font-size: 13px; color: var(--text-muted); }
+.run-stats span { display: flex; align-items: center; gap: 4px; }
+
+.app-main {
+  padding: 20px 24px; max-width: 1200px; margin: 0 auto;
+  width: 100%; display: flex; flex-direction: column; gap: 10px;
+}
+
+.result-card {
+  background: var(--surface); border: 1px solid var(--border);
+  border-radius: 10px; overflow: hidden;
+}
+.result-header {
+  padding: 14px 16px; cursor: pointer;
+  display: flex; flex-direction: column; gap: 6px;
+  user-select: none; position: relative;
+}
+.result-header:hover { background: var(--surface-2); }
+
+.result-meta { display: flex; align-items: baseline; gap: 10px; }
+.result-index { font-size: 12px; color: var(--text-muted); min-width: 28px; }
+.result-subject { font-weight: 500; font-size: 14px; flex: 1; }
+
+.avg-badge {
+  font-size: 13px; font-weight: 600; padding: 2px 8px; border-radius: 12px;
+}
+.score-green { color: var(--green); background: var(--green-bg); }
+.score-amber { color: var(--amber); background: var(--amber-bg); }
+.score-red   { color: var(--red);   background: var(--red-bg); }
+
+.result-tags { display: flex; flex-wrap: wrap; gap: 6px; }
+.tag {
+  font-size: 11px; padding: 2px 7px; background: var(--surface-2);
+  border: 1px solid var(--border); border-radius: 4px; color: var(--text-muted);
+}
+.tag.skill {
+  color: var(--accent); border-color: rgba(67,97,238,0.3);
+  background: rgba(67,97,238,0.08);
+}
+
+.result-scores { display: flex; flex-wrap: wrap; gap: 6px; align-items: center; }
+.score-pill {
+  font-size: 11px; padding: 2px 8px; border-radius: 10px; font-weight: 500;
+}
+.score-comment { font-size: 12px; color: var(--text-muted); font-style: italic; }
+
+.expand-toggle {
+  position: absolute; right: 16px; top: 16px;
+  font-size: 11px; color: var(--text-muted);
+}
+
+.result-body {
+  border-top: 1px solid var(--border); padding: 16px;
+  display: none; flex-direction: column; gap: 12px;
+}
+.result-body.open { display: flex; }
+
+.reply-columns { display: grid; grid-template-columns: 1fr 1fr; gap: 12px; }
+.reply-col {
+  background: var(--surface-2); border: 1px solid var(--border);
+  border-radius: 8px; overflow: hidden;
+}
+.reply-col-label {
+  font-size: 11px; font-weight: 600; text-transform: uppercase;
+  letter-spacing: 0.05em; color: var(--text-muted);
+  padding: 8px 12px; border-bottom: 1px solid var(--border);
+}
+.reply-text {
+  padding: 12px; font-family: inherit; font-size: 13px;
+  line-height: 1.6; white-space: pre-wrap; word-break: break-word;
+}
+.tools-line { font-size: 12px; color: var(--text-muted); }
+
+.generated-at {
+  text-align: center; padding: 32px; font-size: 12px; color: var(--text-muted);
+}
+</style>
+</head>
+<body>
+<div class="app">
+  <header class="app-header" id="header"></header>
+  <main class="app-main" id="main"></main>
+</div>
+<script>const DATA = {"run": {"id": 4, "run_at": "2026-03-09 10:43:43.359363+00:00", "limit_": 10, "offset_": 0, "language": "en", "total": 10, "avg_action": 4.9, "avg_completeness": 4.8, "avg_tone": 5.0, "avg_overall": 4.9}, "results": [{"email_index": 1, "subject": "Account Disruption", "body": "Dear Customer Support Team,\\n\\nI am writing to report a significant problem with the centralized account management portal, which currently appears to be offline. This outage is blocking access to account settings, leading to substantial inconvenience. I have attempted to log in multiple times using different browsers and devices, but the issue persists.\\n\\nCould you please provide an update on the outage status and an estimated time for resolution? Also, are there any alternative ways to access and manage my account during this downtime?", "queue": "Service Outages and Maintenance", "email_type": "Incident", "priority": "high", "skills": "diagnose_incident", "tools": "lookup_customer, search_knowledge_base, get_ticket_history, create_ticket, escalate_to_human, send_reply", "ground_truth": "Thank you for reaching out, <name>. We are aware of the outage affecting the centralized account management system, and our technical team is actively working to resolve the issue. In the meantime, we suggest using alternative methods to manage your account, with a focus on restoring service as quickly as possible. We will provide an update as soon as the service is back online. We apologize for the inconvenience and appreciate your patience. If you have any further questions, please let us know.", "generated": "Thank you for reaching out, Jordan.\n\nWe are sorry to hear that you are unable to access the centralized account management portal and fully understand how disruptive this kind of outage can be, especially when you need to manage your account settings. Your experience of the issue persisting across multiple browsers and devices is particularly helpful context, as it suggests this is not an isolated, device-specific problem.\n\nWe have logged this as ticket #TKT-436546 and have escalated it immediately to our Senior Support Team for urgent investigation. A specialist will be in touch with you shortly — we are targeting a response within 2 business hours. Our team will work to confirm the scope of the outage, identify the cause, and provide you with both a resolution timeline and any available workarounds for managing your account in the meantime.\n\nSince this issue is directly affecting your access to critical account functions, we would also be happy to schedule a call at a time that suits you so we can guide you through any interim steps and keep you updated in real time — please feel free to share your availability and we will arrange this promptly.\n\nIf you have any further questions, please let us know.", "score_action": 4, "score_completeness": 5, "score_tone": 5, "score_avg": 4.666666666666667, "score_comment": "Generated reply goes beyond ground truth by creating a ticket and offering a call, which wasn't explicitly requested and may overpromise on a system-wide outage."}, {"email_index": 2, "subject": "Query About Smart Home System Integration Features", "body": "Dear Customer Support Team,\\n\\nI hope this message reaches you well. I am reaching out to request detailed information about the capabilities of your smart home integration products listed on your website. As a potential customer aiming to develop a seamlessly interconnected home environment, it is essential to understand how your products interact with various smart home platforms.\\n\\nCould you kindly provide detailed compatibility information with popular smart home ecosystems such as Amazon Alexa, Google Assistant, and Apple?", "queue": "Sales and Pre-Sales", "email_type": "Question", "priority": "medium", "skills": "general_inquiry", "tools": "lookup_customer, search_knowledge_base, search_knowledge_base, search_knowledge_base, create_ticket, send_reply", "ground_truth": "Thank you for your inquiry. Our products support integration with Amazon Alexa, Google Assistant, and Apple HomeKit. Compatibility details can differ depending on the specific item; please let us know which models you are interested in. The setup process is generally user-friendly but may require professional installation. We regularly update our software to provide enhanced features. For comprehensive information on compatibility with upcoming updates, please specify the models you are considering.", "generated": "Thank you for reaching out, Parker.\n\nOur smart home products support integration with Amazon Alexa, Google Assistant, and Apple HomeKit, so they are well-suited to helping you build the interconnected home environment you have in mind. Please note that compatibility details can vary by specific model, and our team regularly releases software and firmware updates to expand and enhance these integrations, so keeping your devices up to date is always a good idea. If you could let us know which particular models or devices you are interested in, we would be happy to provide you with more precise compatibility information tailored to your setup. Your enquiry has been logged under ticket TKT-349272 for reference.\n\nIf you have any further questions, please let us know.", "score_action": 5, "score_completeness": 5, "score_tone": 5, "score_avg": 5.0, "score_comment": "none"}, {"email_index": 3, "subject": "Inquiry Regarding Invoice Details", "body": "Dear Customer Support Team,\\n\\nI hope this message finds you well. I am reaching out to request clarification about the billing and payment procedures linked to my account. Recently, I observed some inconsistencies in the charges applied and would like to ensure I fully understand the billing cycle, accepted payment options, and any potential extra charges.\\n\\nFirstly, I would be grateful if you could provide a detailed explanation of how the billing cycle functions. Specifically, I am interested in knowing the start and end dates.\\n\\nThank you for your assistance regarding these billing inquiries.", "queue": "Billing and Payments", "email_type": "Question", "priority": "medium", "skills": "billing_inquiry", "tools": "lookup_customer, search_knowledge_base, search_knowledge_base, search_knowledge_base, create_ticket, send_reply", "ground_truth": "We appreciate you reaching out with your billing questions. The billing period generally begins on the first day of the month and concludes on the last day, with payments due by the 10th of the following month. We accept credit cards, bank transfers, and certain online payment services; credit card transactions are typically processed the quickest. Late payments may incur fees based on the due date, and any additional processing charges depend on the chosen payment method. You can review your statements for detailed payment information.", "generated": "Thank you for reaching out, Taylor.\n\nRegarding your billing cycle, your billing period runs from the first day to the last day of each calendar month, with payment due by the 10th of the following month. For example, charges incurred in January would be due by February 10th. As for accepted payment options, we support credit cards (Visa, Mastercard, and American Express), bank transfers, and major online payment services such as PayPal, with credit card transactions typically being the quickest to process.\n\nOn the topic of potential extra charges, please note that additional processing fees may apply depending on your chosen payment method — bank transfers, for instance, may carry a small processing fee, whereas credit card payments are typically included in your plan. Any applicable surcharges are clearly itemised on your invoice so you can review exactly what you have been charged. We have logged this inquiry as ticket #TKT-359987 for your reference, and a billing specialist will be happy to look into the specific inconsistencies you noticed if you would like to share further details.\n\nIf you have any further questions, please let us know.", "score_action": 5, "score_completeness": 5, "score_tone": 5, "score_avg": 5.0, "score_comment": "none"}, {"email_index": 4, "subject": "Question About Marketing Agency Software Compatibility", "body": "Dear Support Team,\\n\\nI hope this message reaches you well. I am reaching out to ask about the compatibility of your products with the specific needs of marketing agencies. Our company is considering adopting these solutions to streamline our current marketing processes and wants to confirm that the products are fully compatible with the tools and platforms we currently utilize.\\n\\nCould you please supply detailed information regarding the compatibility of your products with popular marketing software, CRM systems, email marketing applications, and analytics platforms? Additionally, I would appreciate any relevant case studies or documentation tailored to our use case.", "queue": "Sales and Pre-Sales", "email_type": "Question", "priority": "medium", "skills": "general_inquiry", "tools": "lookup_customer, search_knowledge_base, send_reply", "ground_truth": "Thank you for your inquiry. Our product supports integration with major CRM, email marketing, and analytics platforms through APIs and customization options. Please specify the tools you are using so we can provide you with detailed documentation and relevant case studies.", "generated": "Thank you for reaching out, Jamie.\n\nTo give you accurate and detailed compatibility information, could you let us know which specific CRM, email marketing, and analytics platforms your team currently uses? With those details, we can provide precise documentation and any relevant case studies tailored to your setup.\n\nIf you have any further questions, please let us know.", "score_action": 5, "score_completeness": 4, "score_tone": 5, "score_avg": 4.666666666666667, "score_comment": "Generated reply is slightly more personalized and friendly, but doesn't mention API/customization options that ground truth proactively disclosed."}, {"email_index": 5, "subject": "Feature Query", "body": "Dear Customer Support,\\n\\nI hope this message reaches you in good health. I am eager to learn more about the features of one of your products. Would you be able to share comprehensive details about its functionalities, specifications, and any distinctive characteristics it may possess? Additionally, if there are user manuals, tutorials, or demonstration videos available, I would be grateful if you could provide those resources. Gaining a thorough understanding of the features will assist me in making an informed decision regarding the product.\\n\\nThank you very much for your assistance. I look forward to your prompt reply.\\n\\nBest regards", "queue": "Sales and Pre-Sales", "email_type": "Question", "priority": "medium", "skills": "general_inquiry", "tools": "lookup_customer, send_reply", "ground_truth": "Thank you for your inquiry. Please specify which product you are interested in, so I can provide detailed information, features, and relevant resources.", "generated": "Thank you for reaching out, Riley. I'd be happy to help you explore our product features, but could you please let us know which specific product you're interested in learning more about? Once we have that detail, we'll be able to share the relevant features, specifications, and any available resources such as manuals or tutorials right away. If you have any further questions, please let us know.", "score_action": 5, "score_completeness": 5, "score_tone": 5, "score_avg": 5.0, "score_comment": "none"}, {"email_index": 6, "subject": "System Interruptions", "body": "Dear Customer Support Team,\\n\\nI am submitting a report regarding multiple system service disruptions that are currently interfering with project operations and client interactions. These interruptions have notably reduced efficiency and caused delays in meeting important deadlines.\\n\\nInitial assessments suggest that the primary issue may be linked to widespread failures in network hardware connectivity. We have already carried out several basic troubleshooting procedures, such as rebooting devices and performing initial system checks, but the problems persist.", "queue": "Service Outages and Maintenance", "email_type": "Incident", "priority": "high", "skills": "diagnose_incident", "tools": "lookup_customer, search_knowledge_base, get_ticket_history, create_ticket, send_reply", "ground_truth": "Thank you for bringing the system disruptions to our attention. We understand the importance of maintaining stable services for project workflows and client communications, and we apologize for the inconvenience caused. To assist us in diagnosing the issue, could you please provide specific details about the affected systems or services, the approximate start time of the outages, and any error messages or logs you've encountered? Additionally, let us know if the outages are impacting users at a single location or across multiple sites.", "generated": "Thank you for reaching out, Jamie.\n\nWe are sorry to hear that you are experiencing ongoing system disruptions impacting your project operations and client interactions — we fully understand how critical it is to restore normal service as quickly as possible. We have logged this as ticket #TKT-829112 and our Service Outages and Maintenance team has begun reviewing the report.\n\nTo help us diagnose the root cause as efficiently as possible, could you please provide the following details in a single response: the types of devices affected and their operating system versions, including any recent OS or firmware updates applied before the disruptions began; the exact error messages or codes you are seeing on screen; the approximate date and time the issues first started; whether the disruptions are isolated to a specific location, device, or user, or whether they are affecting multiple sites and users simultaneously; and any recent network configuration changes, hardware replacements, or software deployments that may coincide with the onset of the problem. Additionally, since this issue is actively affecting your ability to meet deadlines and engage with clients, we would be happy to schedule a call at a time that works for you so our team can guide you through more advanced troubleshooting steps — please share your availability and we will arrange this promptly.\n\nIf you have any further questions, please let us know.", "score_action": 5, "score_completeness": 5, "score_tone": 5, "score_avg": 5.0, "score_comment": "none"}, {"email_index": 7, "subject": "Connectivity Problems with Printer on MacBook Pro", "body": "Dear Support Team,\\n\\nI am reporting a recurring issue with the Laser Printer when printing from MacBook Pros running macOS 15. Several team members have recently encountered this problem, which appears to be connected to the latest macOS 15 system updates.\\n\\nWe believe the root cause might be a driver compatibility issue due to the updated operating systems or printer firmware. To troubleshoot, we have restarted the printers and MacBook devices, reinstalled the printer drivers, and verified configurations.", "queue": "Technical Support", "email_type": "Problem", "priority": "high", "skills": "diagnose_incident", "tools": "lookup_customer, search_knowledge_base, get_ticket_history, create_ticket, escalate_to_human, send_reply", "ground_truth": "Thank you for reaching out regarding the connectivity problems with the Laser Printer on MacBook Pros after recent macOS 15 updates. We understand how disruptive this can be and appreciate your efforts in troubleshooting so far. To assist you further, please confirm the specific MacBook model and current macOS version you are using (including whether you have iOS devices like iPhones or iPads). Also, provide the model and driver version of the Laser Printer installed. Meanwhile, we recommend...", "generated": "Thank you for reaching out, Morgan.\n\nWe are sorry to hear that several of your team members are experiencing laser printer connectivity issues on their MacBook Pros following the recent macOS 15 updates — we understand how disruptive this can be to day-to-day operations. We appreciate the thorough troubleshooting steps your team has already taken, including restarting devices, reinstalling drivers, and verifying configurations.\n\nGiven the scope of this issue, we have logged this as ticket #TKT-700033 and immediately escalated it to our Senior Support Team, who will be reaching out within 2 business hours. To help our specialists investigate further, it would be very helpful to know the specific macOS 15 version currently installed on the affected MacBook Pros (as well as the version prior to the update, if known), the make and model of the laser printer along with its current firmware version, the exact error messages or symptoms observed when the connection fails, the approximate date and time the issue first appeared, and whether the problem occurs consistently across all affected devices and locations or only in certain conditions.\n\nSince this issue is impacting your team's access to printing across multiple devices, we would also like to offer a call at a time that works best for you so one of our specialists can guide you through more advanced troubleshooting steps — please feel free to share your availability and we will do our best to accommodate you.\n\nIf you have any further questions, please let us know.", "score_action": 5, "score_completeness": 5, "score_tone": 5, "score_avg": 5.0, "score_comment": "none"}, {"email_index": 8, "subject": "VPN Access Issue", "body": "Customer Support,\\n\\nWe are encountering a disruption in VPN-router connectivity that is impacting several devices, notably essential remote telemedicine systems and EMR integrations. Attempts to resolve the issue by restarting affected devices and resetting the router have been unsuccessful. We suspect the problem may be related to firmware discrepancies following recent network configuration updates. This disruption is significantly affecting our operations, and we urgently need assistance to identify and fix the root cause. Kindly advise on additional troubleshooting steps.", "queue": "IT Support", "email_type": "Incident", "priority": "critical", "skills": "diagnose_incident", "tools": "lookup_customer, search_knowledge_base, get_ticket_history, create_ticket, escalate_to_human, send_reply", "ground_truth": "Thank you for reporting this problem. Please provide the model of your VPN router, the current firmware version, and details of any recent network modifications. This information will assist us in diagnosing the issue and recommending suitable troubleshooting measures or firmware updates.", "generated": "Thank you for reaching out, Skyler.\n\nWe completely understand the urgency of this situation and sincerely apologize for the disruption this is causing to your telemedicine and EMR operations. A VPN-router connectivity failure affecting critical healthcare systems is something we take extremely seriously, and we want to assure you that resolving this as quickly as possible is our top priority.\n\nWe have logged this as ticket #TKT-158658 and immediately escalated it to our Senior Support Team, who are specialists in network and VPN infrastructure. They are actively engaged and will be reaching out to you shortly, with an estimated response within 2 business hours. To help our specialists investigate as efficiently as possible, we would appreciate a few additional details: could you please share the current firmware versions on your VPN router and affected devices, as well as the versions they were running prior to the recent network configuration updates? Please also let us know the exact error messages or codes being displayed, the approximate date and time when the connectivity issues first appeared, the number and types of devices affected, and a summary of the specific network configuration changes that were recently made. To help expedite resolution given the critical nature of this issue, we would also like to offer scheduling a call at a time that works for you so our specialist can walk your team through advanced troubleshooting steps directly — please share your availability and we will arrange this promptly.\n\nIf you have any further questions, please let us know.", "score_action": 5, "score_completeness": 5, "score_tone": 5, "score_avg": 5.0, "score_comment": "none"}, {"email_index": 9, "subject": "Immediate Help Needed: Technical Problem with Cloud SaaS Service", "body": "Dear Customer Support Team,\\n\\nI am submitting a report regarding a technical problem encountered with the Cloud SaaS platform, which is currently disrupting our business activities. I have observed that certain features are not functioning as expected, causing interruptions that hinder workflow efficiency.\\n\\nIn particular, I am facing sporadic connectivity issues when trying to access the platform. Sometimes, the system fails to load the dashboard, and the data displayed appears outdated or incomplete. Furthermore, the response times for executing commands have significantly increased, resulting in delays.", "queue": "Technical Support", "email_type": "Incident", "priority": "high", "skills": "diagnose_incident", "tools": "lookup_customer, search_knowledge_base, get_ticket_history, create_ticket, send_reply", "ground_truth": "Thanks for providing detailed information about the issue with the Cloud SaaS platform. We apologize for the inconvenience and understand the impact on your business. To assist us further, could you please confirm if the problem is affecting specific user accounts, and share any relevant error messages or screenshots? Also, let us know your current browser and operating system versions. Our technical team is ready to escalate this matter and work towards a swift resolution. Feel free to contact us by phone if needed.", "generated": "Thank you for reaching out, Sage.\n\nWe are sorry to hear that you are experiencing sporadic connectivity issues, dashboard loading failures, stale data, and increased response times on the Cloud SaaS platform — we fully understand how disruptive this can be to your day-to-day operations. Our technical team is actively investigating this and has logged your report as ticket #TKT-987491 for tracking purposes.\n\nTo help us diagnose the root cause as quickly as possible, could you please share the following details in a single reply: the device type, operating system, and browser (or desktop client) you are using to access the platform, including any version numbers and whether any updates were applied recently; any specific error messages or codes that appear when the dashboard fails to load; the approximate date and time when you first noticed the issue; whether the problem is affecting a single device and location or multiple users across your organisation; and any recent changes made to your environment, such as network configuration updates, new firewall rules, or changes to user permissions.\n\nSince this issue is impacting access to your core business platform, we would also like to offer a scheduled call at a time convenient for you so one of our specialists can walk you through advanced troubleshooting steps in real time — please let us know your availability and we will arrange this promptly.\n\nIf you have any further questions, please let us know.", "score_action": 5, "score_completeness": 5, "score_tone": 5, "score_avg": 5.0, "score_comment": "none"}, {"email_index": 10, "subject": "Inquiry for Detailed Information on Agency Offerings", "body": "Dear Customer Support Team,\\n\\nI hope this message reaches you well. I am writing to request detailed information about the services provided by your agency. Specifically, I am interested in understanding the variety of services available, the pricing models, and any special packages or offers that might be applicable.\\n\\nAdditionally, I would appreciate it if you could send brochures, service contracts, and case studies highlighting your previous work and client success stories. This information will greatly help me in making an informed decision.", "queue": "Sales and Pre-Sales", "email_type": "Request", "priority": "medium", "skills": "general_inquiry", "tools": "lookup_customer, search_knowledge_base, create_ticket, send_reply", "ground_truth": "Thank you for your interest in our agency's services. We offer a comprehensive selection of solutions including digital marketing, brand management, content creation, and campaign planning. Our pricing is flexible; standard packages can be customized to meet specific client requirements, and we often have special promotions. We are happy to send brochures, service agreements, and case studies that showcase our clients' successes. Please reply with your preferred email address to receive these materials. We look forward to assisting you through the onboarding process.", "generated": "Thank you for reaching out, Riley.\n\nWe offer a broad range of digital and traditional marketing services, including social media management, SEO, email marketing, content development, and print advertising, among others. Our pricing is flexible and adaptable, allowing us to build customised plans that align with your specific business needs and budget. Case studies relevant to your industry are available upon request, and we would be happy to share those along with further service details.\n\nTo help us put together the most relevant brochures, service information, and tailored package options for you, it would be helpful to know a bit more about your industry, key business objectives, and any budget parameters you have in mind. Your inquiry has been logged under ticket ID TKT-483910, and a member of our team will be on hand to assist with any further details.\n\nIf you have any further questions, please let us know.", "score_action": 5, "score_completeness": 4, "score_tone": 5, "score_avg": 4.666666666666667, "score_comment": "Generated reply addresses all core requests (services, pricing, materials) and adds proactive next steps; minor gap is not explicitly confirming brochures/contracts will be sent (only case studies mentioned by request)."}]};</script>
+<script>
+function scoreClass(v) {
+  if (v == null) return '';
+  if (v <= 2) return 'score-red';
+  if (v === 3) return 'score-amber';
+  return 'score-green';
+}
+
+function scorePill(label, value) {
+  const cls = scoreClass(value);
+  return `<span class="score-pill ${cls}">${label} ${value ?? '—'}/5</span>`;
+}
+
+function fmtDate(iso) {
+  return new Date(iso).toLocaleString(undefined, {
+    year: 'numeric', month: 'short', day: 'numeric',
+    hour: '2-digit', minute: '2-digit'
+  });
+}
+
+function buildCard(r, index) {
+  const avgCls = scoreClass(r.score_avg ? Math.round(r.score_avg) : null);
+  const avgStr = r.score_avg != null ? r.score_avg.toFixed(1) + ' / 5' : '—';
+  const skillTag = r.skills ? `<span class="tag skill">${r.skills}</span>` : '';
+  const comment = (r.score_comment && r.score_comment !== 'none')
+    ? `<span class="score-comment">"${r.score_comment}"</span>` : '';
+  const toolsLine = r.tools
+    ? `<p class="tools-line">Tools used: ${r.tools}</p>` : '';
+
+  return `
+<div class="result-card">
+  <div class="result-header" onclick="toggle(this)">
+    <div class="result-meta">
+      <span class="result-index">#${r.email_index}</span>
+      <span class="result-subject">${esc(r.subject)}</span>
+      <span class="avg-badge ${avgCls}">${avgStr}</span>
+    </div>
+    <div class="result-tags">
+      <span class="tag">${esc(r.queue)}</span>
+      <span class="tag">${esc(r.email_type)}</span>
+      <span class="tag">${esc(r.priority)}</span>
+      ${skillTag}
+    </div>
+    <div class="result-scores">
+      ${scorePill('action', r.score_action)}
+      ${scorePill('completeness', r.score_completeness)}
+      ${scorePill('tone', r.score_tone)}
+      ${comment}
+    </div>
+    <span class="expand-toggle">▼</span>
+  </div>
+  <div class="result-body">
+    <div class="reply-columns">
+      <div class="reply-col">
+        <div class="reply-col-label">Ground truth</div>
+        <pre class="reply-text">${esc(r.ground_truth)}</pre>
+      </div>
+      <div class="reply-col">
+        <div class="reply-col-label">Generated</div>
+        <pre class="reply-text">${esc(r.generated)}</pre>
+      </div>
+    </div>
+    ${toolsLine}
+  </div>
+</div>`;
+}
+
+function esc(s) {
+  return (s ?? '').replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/"/g,'&quot;');
+}
+
+function toggle(header) {
+  const body = header.nextElementSibling;
+  const arrow = header.querySelector('.expand-toggle');
+  body.classList.toggle('open');
+  arrow.textContent = body.classList.contains('open') ? '▲' : '▼';
+}
+
+window.toggle = toggle;
+
+(function () {
+  const run = DATA.run;
+  const results = DATA.results;
+
+  const header = document.getElementById('header');
+  const main = document.getElementById('main');
+
+  header.innerHTML = `
+    <div class="header-left">
+      <h1>agent-cli showcase</h1>
+      <span class="header-sub">Claude · CLI transport · eval results</span>
+    </div>
+    <div class="run-stats">
+      <span>${fmtDate(run.run_at)}</span>
+      <span>${run.total ?? results.length} emails</span>
+      ${run.avg_overall != null ? `<span>avg <strong>${run.avg_overall.toFixed(1)}/5</strong></span>` : ''}
+    </div>`;
+
+  main.innerHTML = results.map(buildCard).join('') +
+    `<p class="generated-at">Generated ${new Date().toLocaleString()}</p>`;
+})();
+</script>
+</body>
+</html>

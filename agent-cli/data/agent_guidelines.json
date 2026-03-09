@@ -1,5 +1,6 @@
 [
   {
+    "id": 4,
     "category": "technical_support",
     "topic": "CI/CD pipeline documentation requests",
     "trigger": "A customer requests CI/CD pipeline documentation, setup guides, or related materials without specifying their project environment or tooling.",
@@ -14,6 +15,77 @@
       "setup",
       "configuration",
       "devops"
+    ]
+  },
+  {
+    "id": 5,
+    "category": "product",
+    "topic": "Smart Home Compatibility — Model Clarification",
+    "trigger": "A customer asks about smart home integration or compatibility but does not specify which product models they are interested in.",
+    "instruction": "Provide the general compatibility overview (Amazon Alexa, Google Assistant, Apple HomeKit) first, then ask the customer to specify which models they are considering so you can give precise compatibility and setup details. Do not escalate to Sales — this is answerable directly using the knowledge base.",
+    "keywords": [
+      "smart home",
+      "integration",
+      "compatibility",
+      "model",
+      "Alexa",
+      "Google Assistant",
+      "HomeKit",
+      "which device"
+    ]
+  },
+  {
+    "id": 6,
+    "category": "general",
+    "topic": "Software compatibility questions without specific tools named",
+    "trigger": "A customer asks about product compatibility with their tools, platforms, or tech stack but does not specify which tools, CRM systems, or platforms they are using.",
+    "instruction": "Do NOT escalate to Sales or Pre-Sales. Instead, treat this as a 'needs clarification' inquiry. Provide a brief overview of the general integration capabilities (e.g. support for CRM, email marketing, and analytics platforms via APIs and customization options), then ask the customer to specify the exact tools they are using so you can provide detailed documentation and relevant case studies. Do not create a ticket yet.",
+    "keywords": [
+      "compatibility",
+      "integration",
+      "CRM",
+      "tools",
+      "platforms",
+      "marketing software",
+      "analytics",
+      "email marketing",
+      "API"
+    ]
+  },
+  {
+    "id": 7,
+    "category": "general",
+    "topic": "Multi-unit or enterprise marketing workflow inquiries",
+    "trigger": "A customer asks about optimising marketing processes, analytics integration, automation, or centralised account management across multiple units or locations, without specifying which tools or platforms they currently use.",
+    "instruction": "Before routing or answering, ask the customer to specify which analytics and automation tools their teams are currently using. This information is necessary to suggest compatible solutions, effective practices, and relevant case studies tailored to their environment. Do not create a ticket or route to Sales until this clarifying information is provided.",
+    "keywords": [
+      "multi-unit",
+      "marketing",
+      "workflow",
+      "analytics",
+      "automation",
+      "centralised",
+      "account management",
+      "optimisation",
+      "enterprise",
+      "integration"
+    ]
+  },
+  {
+    "id": 8,
+    "category": "general",
+    "topic": "Big data or analytics system upgrade requests",
+    "trigger": "A customer submits a proposal or request for upgrades to big data, analytics, or infrastructure systems without specifying their current platform setup or preferred technology stacks.",
+    "instruction": "Before creating a ticket or routing to Sales, ask the customer to specify their current platform setup and preferred technology stacks. Explain that this information is needed to evaluate feasibility, required resources, and to outline next steps. Do not create a ticket yet — wait for the customer's clarifying response.",
+    "keywords": [
+      "big data",
+      "analytics",
+      "infrastructure upgrade",
+      "machine learning",
+      "technology stack",
+      "platform setup",
+      "data systems",
+      "upgrade proposal"
     ]
   }
 ]

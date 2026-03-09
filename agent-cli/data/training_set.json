@@ -16,6 +16,23 @@
       "answer": "Thank you for reaching out to us, <name>. We understand the importance of reliable and stable network connectivity. Currently, widespread problems with repeaters and interference in the environment are being reported. To assist you further, could you please specify which devices are impacted, provide details about your network setup, and mention any recent modifications? If possible, kindly share relevant error logs. We are prepared to guide you through advanced troubleshooting procedures."
     }
   ],
+  "general_inquiry": [
+    {
+      "subject": "Organizational Revision",
+      "body": "Dear Customer Support Team,\n\nI am reaching out to request an update on the structural details of our organization. The current records reflect information about the marketing agency, which has recently experienced several significant changes. To ensure our records accurately depict the current operations, I would appreciate your assistance in updating the information.\n\nFirst, I would like to clarify the refined roles within the various departments of the agency. Each department now has clearly defined responsibilities aimed at enhancing efficiency and accountability. For instance, the Creative Department is now dedicated solely to content creation.",
+      "answer": "Thank you for informing us about the recent changes in the marketing agency's organizational structure. We appreciate the detailed overview of the updated departmental roles, technology integrations, enhanced client management procedures, and data-driven marketing strategies. To ensure our records are completely accurate, could you please provide official documentation such as organizational charts outlining the new structure? Additionally, if there have been updates regarding key contacts or departmental points of contact, kindly share that information with us."
+    },
+    {
+      "subject": "Query About Smart Home System Integration Features",
+      "body": "Dear Customer Support Team,\\n\\nI hope this message reaches you well. I am reaching out to request detailed information about the capabilities of your smart home integration products listed on your website. As a potential customer aiming to develop a seamlessly interconnected home environment, it is essential to understand how your products interact with various smart home platforms.\\n\\nCould you kindly provide detailed compatibility information with popular smart home ecosystems such as Amazon Alexa, Google Assistant, and Apple?",
+      "answer": "Thank you for your inquiry. Our products support integration with Amazon Alexa, Google Assistant, and Apple HomeKit. Compatibility details can differ depending on the specific item; please let us know which models you are interested in. The setup process is generally user-friendly but may require professional installation. We regularly update our software to provide enhanced features. For comprehensive information on compatibility with upcoming updates, please specify the models you are considering."
+    },
+    {
+      "subject": "Question About Marketing Agency Software Compatibility",
+      "body": "Dear Support Team,\\n\\nI hope this message reaches you well. I am reaching out to ask about the compatibility of your products with the specific needs of marketing agencies. Our company is considering adopting these solutions to streamline our current marketing processes and wants to confirm that the products are fully compatible with the tools and platforms we currently utilize.\\n\\nCould you please supply detailed information regarding the compatibility of your products with popular marketing software, CRM systems, email marketing applications, and analytics platforms? Additionally, I would appreciate any relevant case studies or documentation tailored to our use case.",
+      "answer": "Thank you for your inquiry. Our product supports integration with major CRM, email marketing, and analytics platforms through APIs and customization options. Please specify the tools you are using so we can provide you with detailed documentation and relevant case studies."
+    }
+  ],
   "handle_request": [
     {
       "subject": "Feature Query",
@@ -52,19 +69,11 @@
       "answer": "Thank you for reaching out to us regarding your QuickBooks Online subscription inquiry. We are pleased to assist you with detailed billing information and payment options tailored for institutional clients in the financial services sector. QuickBooks Online offers several subscription tiers with varying features; institutional pricing discounts may also be available based on your organization's size and specific needs. We will send comprehensive documentation covering current plans, pricing details, invoicing processes, payment schedules, and any applicable discounts or special terms."
     }
   ],
-  "billing_inquiry": [],
   "resolve_dispute": [
     {
       "subject": "Problem with Payment Billing Procedures",
       "body": "Customer Service, I am reaching out to report an issue with the billing payment process on my account. Recently, there have been inconsistencies in the billed amounts and delays in confirming payments. This problem is causing inconvenience, and I would be grateful for quick support to resolve it. Please inform me if you need further details from my side to examine the matter. Thank you for your understanding and assistance.",
       "answer": "Thank you for contacting us about the discrepancies and delays observed in the billing payment process. We apologize for any inconvenience this may have caused. To help us assist you efficiently, could you please provide your account number, along with the specific dates, amounts, and transactions in question? This information will enable us to swiftly investigate and identify the discrepancies. If additional verification is necessary, we might request further details. If you prefer to discuss this over the phone, please let us know a convenient time for a call. We appreciate your cooperation."
-    }
-  ],
-  "general_inquiry": [
-    {
-      "subject": "Organizational Revision",
-      "body": "Dear Customer Support Team,\n\nI am reaching out to request an update on the structural details of our organization. The current records reflect information about the marketing agency, which has recently experienced several significant changes. To ensure our records accurately depict the current operations, I would appreciate your assistance in updating the information.\n\nFirst, I would like to clarify the refined roles within the various departments of the agency. Each department now has clearly defined responsibilities aimed at enhancing efficiency and accountability. For instance, the Creative Department is now dedicated solely to content creation.",
-      "answer": "Thank you for informing us about the recent changes in the marketing agency's organizational structure. We appreciate the detailed overview of the updated departmental roles, technology integrations, enhanced client management procedures, and data-driven marketing strategies. To ensure our records are completely accurate, could you please provide official documentation such as organizational charts outlining the new structure? Additionally, if there have been updates regarding key contacts or departmental points of contact, kindly share that information with us."
     }
   ]
 }

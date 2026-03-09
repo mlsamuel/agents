@@ -1,5 +1,5 @@
 """
-store.py — Knowledge base, agent guidelines, and regression training set backed by pgvector.
+store.py — Knowledge base, agent guidelines, regression training set, and pipeline runs backed by pgvector.
 
 On first call to get_pool():
   - Connects to DATABASE_URL
@@ -21,6 +21,11 @@ Public API (agent guidelines):
 Public API (regression training set):
   get_training(skill_name)                          -> list[dict]
   add_training_email(skill_name, subject, body, answer) -> bool
+
+Public API (pipeline runs):
+  create_run(limit_, offset_, language)             -> int
+  store_result(run_id, section)                     -> None
+  update_run_stats(run_id, sections)                -> None
 """
 
 import json
@@ -89,6 +94,41 @@ CREATE TABLE IF NOT EXISTS training_set (
     body       TEXT NOT NULL,
     answer     TEXT NOT NULL,
     created_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
+);
+
+CREATE TABLE IF NOT EXISTS pipeline_runs (
+    id               SERIAL PRIMARY KEY,
+    run_at           TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+    limit_           INT,
+    offset_          INT,
+    language         TEXT,
+    total            INT,
+    avg_action       FLOAT,
+    avg_completeness FLOAT,
+    avg_tone         FLOAT,
+    avg_overall      FLOAT
+);
+
+CREATE TABLE IF NOT EXISTS pipeline_results (
+    id               SERIAL PRIMARY KEY,
+    run_id           INT  NOT NULL REFERENCES pipeline_runs(id),
+    email_index      INT  NOT NULL,
+    subject          TEXT NOT NULL,
+    body             TEXT NOT NULL,
+    queue            TEXT NOT NULL,
+    email_type       TEXT NOT NULL,
+    priority         TEXT NOT NULL,
+    skills           TEXT,
+    tools            TEXT,
+    ground_truth     TEXT NOT NULL,
+    generated        TEXT NOT NULL,
+    internal_summary TEXT,
+    score_action        INT,
+    score_completeness  INT,
+    score_tone          INT,
+    score_avg           FLOAT,
+    score_comment       TEXT,
+    created_at       TIMESTAMPTZ NOT NULL DEFAULT NOW()
 );
 """
 
@@ -415,3 +455,66 @@ async def add_training_email(skill_name: str, subject: str, body: str, answer: s
         )
     log.info("kb: added training email for '%s' (slot %d/%d)", skill_name, count + 1, MAX_PER_SKILL)
     return True
+
+
+# ── Pipeline runs ─────────────────────────────────────────────────────────────
+
+async def create_run(limit_: int, offset_: int, language: str) -> int:
+    """Insert a new pipeline_runs row and return its id."""
+    pool = await get_pool()
+    async with pool.acquire() as conn:
+        run_id = await conn.fetchval(
+            "INSERT INTO pipeline_runs (limit_, offset_, language) VALUES ($1, $2, $3) RETURNING id",
+            limit_, offset_, language,
+        )
+    return run_id
+
+
+async def store_result(run_id: int, section: dict) -> None:
+    """Insert one pipeline_results row from a section dict."""
+    pool = await get_pool()
+    score = section.get("score") or {}
+    async with pool.acquire() as conn:
+        await conn.execute(
+            """INSERT INTO pipeline_results
+               (run_id, email_index, subject, body, queue, email_type, priority,
+                skills, tools, ground_truth, generated, internal_summary,
+                score_action, score_completeness, score_tone, score_avg, score_comment)
+               VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14,$15,$16,$17)""",
+            run_id,
+            section["index"],
+            section["subject"],
+            section.get("body", ""),
+            section.get("queue", ""),
+            section.get("type", ""),
+            section.get("priority", ""),
+            section.get("skills", ""),
+            section.get("tools", ""),
+            section.get("ground_truth", ""),
+            section.get("generated", ""),
+            section.get("internal_summary", ""),
+            score.get("action"),
+            score.get("completeness"),
+            score.get("tone"),
+            section.get("avg"),
+            score.get("comment"),
+        )
+
+
+async def update_run_stats(run_id: int, sections: list[dict]) -> None:
+    """Update aggregate scores on a pipeline_runs row after processing completes."""
+    if not sections:
+        return
+    total = len(sections)
+    avg_action       = sum(s["score"]["action"]       for s in sections) / total
+    avg_completeness = sum(s["score"]["completeness"] for s in sections) / total
+    avg_tone         = sum(s["score"]["tone"]         for s in sections) / total
+    avg_overall      = sum(s["avg"]                   for s in sections) / total
+    pool = await get_pool()
+    async with pool.acquire() as conn:
+        await conn.execute(
+            """UPDATE pipeline_runs
+               SET total=$2, avg_action=$3, avg_completeness=$4, avg_tone=$5, avg_overall=$6
+               WHERE id=$1""",
+            run_id, total, avg_action, avg_completeness, avg_tone, avg_overall,
+        )
