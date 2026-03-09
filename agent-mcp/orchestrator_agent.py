@@ -17,6 +17,8 @@ import asyncio
 import json
 from dataclasses import dataclass, field
 
+from pathlib import Path
+
 from dotenv import load_dotenv
 from client import Client
 from logger import get_logger
@@ -24,7 +26,7 @@ from workflow_agent import WorkflowAgent, WorkflowResult
 
 log = get_logger(__name__)
 
-load_dotenv()
+load_dotenv(Path(__file__).parent / ".env")
 
 DECOMPOSE_MODEL = "claude-haiku-4-5-20251001"
 MERGE_MODEL     = "claude-sonnet-4-6"

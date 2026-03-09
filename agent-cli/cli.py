@@ -47,7 +47,7 @@ from tools import (
     send_reply,
 )
 
-load_dotenv()
+load_dotenv(Path(__file__).parent / ".env")
 
 _SANDBOX_RUNNER = Path(__file__).parent / "sandbox_runner.py"
 _DOCKER_IMAGE   = "python:3.12-slim"

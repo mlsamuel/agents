@@ -3,7 +3,7 @@ services:
     image: pgvector/pgvector:pg17
     restart: unless-stopped
     environment:
-      POSTGRES_DB: agents
+      POSTGRES_DB: agents_cli
       POSTGRES_USER: agents
       POSTGRES_PASSWORD: agents
     ports:

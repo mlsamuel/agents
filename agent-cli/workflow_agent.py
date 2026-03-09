@@ -25,7 +25,7 @@ import skills as skills_db
 from tool_registry import BY_NAME as _TOOL_TO_CLI, SCHEMAS as _TOOL_SCHEMAS
 
 log = get_logger(__name__)
-load_dotenv()
+load_dotenv(Path(__file__).parent / ".env")
 
 _CLI_SCRIPT = Path(__file__).parent / "cli.py"
 

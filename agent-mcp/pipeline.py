@@ -38,7 +38,7 @@ import store as kb
 import skills as skills_db
 from skills import rollback_skill
 
-load_dotenv()
+load_dotenv(Path(__file__).parent / ".env")
 
 _MCP_SERVER = Path(__file__).parent / "mcp_server.py"
 _MCP_PORT   = int(os.environ.get("MCP_PORT", "8765"))

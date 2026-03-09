@@ -22,7 +22,7 @@ from pathlib import Path
 import asyncpg
 from dotenv import load_dotenv
 
-load_dotenv(Path(__file__).parent.parent.parent / ".env")
+load_dotenv(Path(__file__).parent.parent / ".env")
 
 OUT = Path(__file__).parent / "showcase" / "index.html"
 

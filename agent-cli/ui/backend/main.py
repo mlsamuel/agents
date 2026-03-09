@@ -17,7 +17,7 @@ from dotenv import load_dotenv
 from fastapi import FastAPI, HTTPException
 from fastapi.middleware.cors import CORSMiddleware
 
-load_dotenv(Path(__file__).parent.parent.parent.parent / ".env")
+load_dotenv(Path(__file__).parent.parent.parent / ".env")
 
 _pool: asyncpg.Pool | None = None
 

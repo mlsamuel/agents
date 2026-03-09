@@ -225,6 +225,22 @@ async def _seed_training(conn: asyncpg.Connection) -> None:
     log.info("kb: seeded %d training emails from %s", len(rows), _TRAINING_JSON)
 
 
+async def _ensure_db(url: str) -> None:
+    """Create the database if it does not exist."""
+    try:
+        conn = await asyncpg.connect(url)
+        await conn.close()
+    except asyncpg.InvalidCatalogNameError:
+        db_name = url.rsplit("/", 1)[-1].split("?")[0]
+        admin_url = url.rsplit("/", 1)[0] + "/postgres"
+        conn = await asyncpg.connect(admin_url)
+        try:
+            await conn.execute(f'CREATE DATABASE "{db_name}"')
+            log.info("kb: created database %s", db_name)
+        finally:
+            await conn.close()
+
+
 async def get_pool() -> asyncpg.Pool:
     global _pool
     if _pool is not None:
@@ -234,6 +250,7 @@ async def get_pool() -> asyncpg.Pool:
     if not url:
         raise RuntimeError("DATABASE_URL is not set")
 
+    await _ensure_db(url)
     _pool = await asyncpg.create_pool(url)
     async with _pool.acquire() as conn:
         await conn.execute(_SCHEMA)

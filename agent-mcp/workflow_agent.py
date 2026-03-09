@@ -16,6 +16,8 @@ import os
 import re
 from dataclasses import dataclass, field
 
+from pathlib import Path
+
 from dotenv import load_dotenv
 from mcp import ClientSession
 from mcp.client.streamable_http import streamablehttp_client
@@ -25,7 +27,7 @@ from logger import get_logger
 import skills as skills_db
 log = get_logger(__name__)
 
-load_dotenv()
+load_dotenv(Path(__file__).parent / ".env")
 
 MCP_SERVER_URL = os.environ.get("MCP_SERVER_URL", "http://127.0.0.1:8765/mcp")
 

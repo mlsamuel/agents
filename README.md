@@ -18,25 +18,27 @@ Tools are exposed as a Click CLI (`cli.py`) that outputs structured JSON. Workfl
 
 ## Shared infrastructure
 
-Both projects use the same Postgres + pgvector backend (skills, knowledge base, agent guidelines, training set), the same email dataset, and the same eval/improve loop. The `.env` file at the repo root is shared.
+Both projects use the same Postgres + pgvector setup and the same email dataset. Each project manages its own database and has its own `.env` file — they are fully independent.
 
 `agent-cli` additionally persists every eval run to `pipeline_runs` + `pipeline_results` tables and ships a static showcase at `agent-cli/ui/showcase/index.html` — open it in any browser with no servers required.
 
 ```
 agents/
 ├── agent-mcp/    # MCP transport variant
-├── agent-cli/    # CLI transport variant
-└── .env          # shared environment variables
+│   └── .env      # per-project credentials + DATABASE_URL
+└── agent-cli/    # CLI transport variant
+    └── .env      # per-project credentials + DATABASE_URL
 ```
 
 ## Setup
 
-Copy `.env.example` from either subproject and fill in your credentials:
+Copy `.env.example` inside the subproject you want to run:
 
 ```bash
-cp agent-cli/.env.example .env
-# ANTHROPIC_API_KEY=...
-# DATABASE_URL=postgresql://user:pass@host/dbname
+cp agent-cli/.env.example agent-cli/.env
+# or
+cp agent-mcp/.env.example agent-mcp/.env
+# edit: ANTHROPIC_API_KEY=... DATABASE_URL=...
 ```
 
 Then follow the setup instructions in the subproject README.

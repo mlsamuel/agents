@@ -34,7 +34,7 @@ import store as kb
 import skills as skills_db
 from skills import rollback_skill
 
-load_dotenv()
+load_dotenv(Path(__file__).parent / ".env")
 
 
 async def main():
