@@ -3,6 +3,4 @@
 __pycache__/
 *.pyc
 eval_output.md
-eval_results.json
-improve_proposals.md
 notes.txt
