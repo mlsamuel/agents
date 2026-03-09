@@ -1,6 +1,6 @@
 # Customer Support Agent System — CLI Edition
 
-A multi-agent customer support pipeline built with Claude and a CLI tool interface. Emails are classified, routed to specialist workflow agents, and handled using skill files that drive tool selection and reply logic. An integrated eval+improve loop scores replies and automatically updates skills, the knowledge base, and agent guidelines. Every eval run is persisted to Postgres and can be viewed as a self-contained HTML showcase.
+A multi-agent customer support pipeline built with Claude and a CLI tool interface. Emails are classified, routed to specialist workflow agents, and handled using skill files that drive tool selection and reply logic. An integrated eval+improve loop scores replies and automatically updates skills, the knowledge base, and agent guidelines. Every eval run is persisted to Postgres and can be viewed as a self-contained HTML showcase — [view showcase](https://htmlpreview.github.io/?https://github.com/mlsamuel/agents/blob/main/agent-cli/ui/showcase/index.html)
 
 This project is a variant of `agent-mcp` that replaces the MCP server with a CLI interface: instead of connecting to a protocol server over HTTP, workflow agents invoke `cli.py` as a subprocess and parse its structured JSON output — the same pattern used by [googleworkspace/cli](https://github.com/googleworkspace/cli).
 
