@@ -83,6 +83,9 @@ class PipelineState(TypedDict):
     eval_score: dict | None    # {action: int, completeness: int, tone: int, comment: str}
     eval_avg: float | None
 
+    # Retry loop — incremented by improve_node each cycle (max 1 retry)
+    retry_count: int
+
 
 # ── Specialist agent sub-graph state ─────────────────────────────────────────
 

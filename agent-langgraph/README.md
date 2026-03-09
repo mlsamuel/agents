@@ -2,7 +2,7 @@
 
 A multi-agent customer support pipeline built with LangChain and LangGraph. Emails are classified, routed to specialist workflow agents, and handled using skill files that drive tool selection and reply logic. An integrated eval+improve loop scores replies and automatically updates skills, the knowledge base, and agent guidelines.
 
-This project implements the same pipeline as `agent-mcp` and `agent-cli` but orchestrates it as an explicit **StateGraph**, demonstrating LangGraph-specific patterns: the Send API for parallel fan-out, compiled sub-graphs as nodes, `ToolNode` for in-process tool execution, a reflection loop inside each specialist agent, and `interrupt()` for human-in-the-loop escalation review.
+This project implements the same pipeline as `agent-mcp` and `agent-cli` but orchestrates it as an explicit **StateGraph**, demonstrating LangGraph-specific patterns: the Send API for parallel fan-out, compiled sub-graphs as nodes, `ToolNode` for in-process tool execution, a reflection loop inside each specialist agent, a retry cycle in the main graph, and `interrupt()` for human-in-the-loop escalation review.
 
 ## Architecture
 
@@ -30,19 +30,25 @@ decompose                     ← Haiku: which specialist agent(s) to invoke
     │          (no subprocess, no HTTP server)
     │
     ▼  fan-in via operator.add reducer on agent_results
-[route_escalation]
+merge                         ← Sonnet: synthesise final_reply from all agent_results
+    │
+    ▼  (when --eval and ground truth available)
+eval                          ← Haiku: scores action / completeness / tone
+    │
+    ├── (avg < min-score and retry_count < 1)
+    │       ▼
+    │   improve               ← Sonnet: proposes skill_edit / kb_entry /
+    │       │                    agent_guideline / new_skill
+    │       └──────────────────► fan_out  ← retry cycle: re-runs agents with updated skills
+    │
+    ▼  (score ok or max retries)
+[route_after_eval]
     │
     ├── wait_for_human        ← interrupt() — pauses for human review of escalations
     │                            resume: python pipeline.py --resume <id> --decision "approve"
-    ▼
-merge                         ← Sonnet: synthesise final_reply from all agent_results
+    ▼  (not escalated)
+END
     │
-    ▼  (when --eval)
-eval                          ← Haiku: scores action / completeness / tone
-    │
-    ▼  (when --improve and avg < --min-score)
-improve                       ← Sonnet: proposes skill_edit / kb_entry /
-    │                            agent_guideline / new_skill
     ▼
 Postgres (skills + knowledge_base + agent_guidelines + training_set +
           pipeline_runs + pipeline_results + LangGraph checkpoint tables)
@@ -73,6 +79,7 @@ START → agent → [tool calls?] → tools → agent (loop)
 | `ToolNode` for in-process tool execution | `agents/base_agent.py` |
 | Conditional edges | `routing.py`, `agents/base_agent.py` |
 | Reflection loop (agent → critic → agent) | `agents/base_agent.py` |
+| Cycle in main graph (improve → fan_out retry) | `graph.py`, `routing.py` — `route_after_eval` |
 | `interrupt()` for human-in-the-loop | `nodes.py` — `wait_for_human_node` |
 | `AsyncPostgresSaver` checkpointer | `checkpointer.py` |
 

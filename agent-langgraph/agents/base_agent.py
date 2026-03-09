@@ -27,6 +27,7 @@ from langgraph.graph import END, START, StateGraph
 from langgraph.graph.state import CompiledStateGraph
 from langgraph.prebuilt import ToolNode
 
+from client import track_langchain_usage
 from logger import get_logger
 from state import AgentResult, AgentState
 from tools import ALL_TOOLS, TOOLS_BY_NAME
@@ -97,6 +98,7 @@ def agent_node(state: AgentState) -> dict:
         extra = [feedback_msg]
 
     response = llm_with_tools.invoke(messages)
+    track_langchain_usage(AGENT_MODEL, response)
     return {"messages": extra + [response]}
 
 
@@ -182,6 +184,7 @@ def critic_node(state: AgentState) -> dict:
             f"Agent reply:\n{reply}"
         )),
     ])
+    track_langchain_usage(CRITIC_MODEL, critique_response)
 
     try:
         raw = critique_response.content

@@ -8,23 +8,24 @@ Pipeline flow:
     → sanitize             (regex: strip injection patterns)
     → classify             (Haiku: queue / priority / type)
     → decompose            (Haiku: which specialist agents to invoke)
-    → [fan_out_node]       (Send API → parallel specialist sub-graphs)
-      ↓↓↓ parallel fan-out via Send — all branches join at route_escalation
+    → fan_out              (Send API → parallel specialist sub-graphs)
+      ↓↓↓ parallel fan-out via Send — all branches join at merge
     → billing_agent | technical_agent | returns_agent | general_agent
-    → [route_escalation]   → wait_for_human | merge
-    → wait_for_human       (interrupt() — pauses for human review)
     → merge                (Sonnet: synthesise final_reply)
-    → [route_eval]         → END (no ground truth) | eval
+    → [route_after_merge]  → eval | wait_for_human | END
     → eval                 (Haiku: LLM-as-judge scoring)
-    → [route_improve]      → END (score ok) | improve
+    → [route_after_eval]   → improve | wait_for_human | END
     → improve              (Sonnet: generate + apply improvement proposals)
+    → retry                ← no-op pass-through enabling the improve → fan_out cycle
+    → wait_for_human       (interrupt() — pauses for human review)
     → END
 
 LangGraph patterns demonstrated:
   • StateGraph + TypedDict state with reducers (Annotated[list, operator.add])
   • Send API for parallel fan-out (replaces asyncio.gather in orchestrator_agent.py)
   • Compiled sub-graphs invoked as async node wrappers
-  • interrupt() for human-in-the-loop escalation review
+  • Cycle in main graph — improve → fan_out retry loop with retry_count guard
+  • interrupt() for human-in-the-loop escalation review (after eval+improve)
   • Conditional edges for pipeline branching at every decision point
   • AsyncPostgresSaver checkpointer for state persistence across interrupt()
 """
@@ -43,12 +44,13 @@ from nodes import (
     fan_out_node,
     improve_node,
     merge_node,
+    retry_node,
     sanitize_node,
     screen_node,
     wait_for_human_node,
     wrap_agent_result,
 )
-from routing import route_escalation, route_eval, route_improve, route_screen
+from routing import route_after_eval, route_after_merge, route_screen
 from state import AgentState, PipelineState
 
 
@@ -100,6 +102,11 @@ def build_main_graph(checkpointer=None):
     builder.add_node("sanitize",       sanitize_node)
     builder.add_node("classify",       classify_node)
     builder.add_node("decompose",      decompose_node)
+    # retry_node is a no-op pass-through that makes the improve → fan_out cycle
+    # possible. LangGraph only accepts list[Send] from conditional edge routing
+    # functions, not from registered nodes. fan_out_node is therefore kept as a
+    # routing function; retry_node is the addressable target for improve.
+    builder.add_node("retry",          retry_node)
     builder.add_node("wait_for_human", wait_for_human_node)
     builder.add_node("merge",          merge_node)
     builder.add_node("eval",           eval_node)
@@ -124,35 +131,37 @@ def build_main_graph(checkpointer=None):
     builder.add_edge("sanitize", "classify")
     builder.add_edge("classify", "decompose")
 
-    # fan_out_node is used as a conditional edge routing function (not a node).
-    # It receives PipelineState and returns list[Send], which LangGraph uses to
-    # dispatch specialist sub-graphs in parallel.
-    # This is the Send API pattern: the routing function itself produces the sends.
+    # fan_out_node is used as a conditional edge routing function (returns list[Send]).
+    # Both decompose and retry feed into it via the same pattern.
     builder.add_conditional_edges("decompose", fan_out_node)
 
-    # Each specialist node feeds into route_escalation after completing.
-    # LangGraph collects all parallel branches via the operator.add reducer on
-    # agent_results before evaluating route_escalation for each branch.
+    # All specialist branches converge at merge via direct edges.
+    # operator.add reducer on agent_results ensures parallel branches don't
+    # overwrite each other — LangGraph waits for all branches before calling merge.
     for specialist in ["billing_agent", "technical_agent", "returns_agent", "general_agent"]:
-        builder.add_conditional_edges(
-            specialist,
-            route_escalation,
-            {"wait_for_human": "wait_for_human", "merge": "merge"},
-        )
+        builder.add_edge(specialist, "merge")
 
-    builder.add_edge("wait_for_human", "merge")
-
+    # merge → eval (if ground truth) | wait_for_human (if escalated) | END
     builder.add_conditional_edges(
-        "merge", route_eval,
-        {END: END, "eval": "eval"},
+        "merge", route_after_merge,
+        {END: END, "eval": "eval", "wait_for_human": "wait_for_human"},
     )
 
+    # eval → improve (score low, retries remain) | wait_for_human (escalated) | END
     builder.add_conditional_edges(
-        "eval", route_improve,
-        {END: END, "improve": "improve"},
+        "eval", route_after_eval,
+        {END: END, "improve": "improve", "wait_for_human": "wait_for_human"},
     )
 
-    builder.add_edge("improve", END)
+    # improve → retry → [fan_out_node routing fn] → specialists: retry cycle.
+    # retry_node is the addressable target; fan_out_node is reused as the routing
+    # function that returns list[Send]. retry_count bounds this to MAX_RETRIES.
+    builder.add_edge("improve", "retry")
+    builder.add_conditional_edges("retry", fan_out_node)
+
+    # After human reviews the escalation, the pipeline ends.
+    # eval+improve have already run before reaching this node.
+    builder.add_edge("wait_for_human", END)
 
     # ── Compile ──────────────────────────────────────────────────────────────
     compile_kwargs: dict = {}

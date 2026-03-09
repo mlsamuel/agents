@@ -64,6 +64,27 @@ class _Messages:
             time.sleep(delay)
 
 
+# Module-level accumulator for token usage from direct ChatAnthropic.invoke() calls.
+# These bypass client.messages.create() so they need a separate tracking path.
+# Populated by track_langchain_usage(); read by Client.usage_summary().
+_langchain_tokens: dict[str, list[int]] = {}  # model → [input_tokens, output_tokens]
+
+
+def track_langchain_usage(model: str, response) -> None:
+    """Accumulate token usage from a ChatAnthropic response into the module-level counter.
+
+    Call this after every ChatAnthropic.invoke() / llm_with_tools.invoke() call.
+    `response.usage_metadata` is populated by LangChain's ChatAnthropic wrapper.
+    """
+    usage = getattr(response, "usage_metadata", None) or {}
+    inp = usage.get("input_tokens", 0)
+    out = usage.get("output_tokens", 0)
+    if inp or out:
+        bucket = _langchain_tokens.setdefault(model, [0, 0])
+        bucket[0] += inp
+        bucket[1] += out
+
+
 class Client:
     """Drop-in replacement for anthropic.Anthropic() with built-in retry and cost tracking."""
 
@@ -72,10 +93,23 @@ class Client:
         _raw = anthropic.Anthropic()
         self.messages = _Messages(_raw.messages, self)
 
+    def _all_usage(self) -> dict[str, list[int]]:
+        """Merge SDK usage (self._usage) with LangChain usage (_langchain_tokens)."""
+        combined: dict[str, list[int]] = {}
+        for model, (inp, out) in self._usage.items():
+            combined.setdefault(model, [0, 0])
+            combined[model][0] += inp
+            combined[model][1] += out
+        for model, (inp, out) in _langchain_tokens.items():
+            combined.setdefault(model, [0, 0])
+            combined[model][0] += inp
+            combined[model][1] += out
+        return combined
+
     def cost_usd(self) -> float:
         """Return estimated total cost in USD based on per-model token usage."""
         total = 0.0
-        for model, (inp, out) in self._usage.items():
+        for model, (inp, out) in self._all_usage().items():
             prices = _PRICING.get(model)
             if prices:
                 total += (inp * prices[0] + out * prices[1]) / 1_000_000
@@ -83,7 +117,8 @@ class Client:
 
     def usage_summary(self) -> str:
         """Return a one-line summary of token usage and estimated cost."""
-        total_in  = sum(v[0] for v in self._usage.values())
-        total_out = sum(v[1] for v in self._usage.values())
+        all_usage = self._all_usage()
+        total_in  = sum(v[0] for v in all_usage.values())
+        total_out = sum(v[1] for v in all_usage.values())
         return (f"tokens: {total_in:,} in / {total_out:,} out  "
                 f"cost: ~${self.cost_usd():.4f}")
