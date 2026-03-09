@@ -1,0 +1,194 @@
+[
+  {
+    "id": 1,
+    "category": "billing",
+    "topic": "Billing cycle dates",
+    "question": "When does my billing cycle start and end?",
+    "answer": "The billing period begins on the first day of the month and ends on the last day of the month. Payment is due by the 10th of the following month.",
+    "keywords": ["billing cycle", "start date", "end date", "billing period"]
+  },
+  {
+    "id": 2,
+    "category": "billing",
+    "topic": "Payment due date",
+    "question": "When is my payment due?",
+    "answer": "Payments are due by the 10th of the month following your billing period. For example, charges from January are due by February 10th.",
+    "keywords": ["payment due", "due date", "when to pay"]
+  },
+  {
+    "id": 3,
+    "category": "billing",
+    "topic": "Accepted payment methods",
+    "question": "What payment methods do you accept?",
+    "answer": "We accept credit cards (Visa, Mastercard, American Express), bank transfers, and major online payment services such as PayPal. Credit card transactions are typically processed the quickest.",
+    "keywords": ["payment methods", "credit card", "bank transfer", "PayPal", "how to pay"]
+  },
+  {
+    "id": 4,
+    "category": "billing",
+    "topic": "Credit card processing speed",
+    "question": "How quickly are credit card payments processed?",
+    "answer": "Credit card payments are typically processed within 1\u20132 business days, making them the fastest payment option we offer. Bank transfers may take 3\u20135 business days to clear.",
+    "keywords": ["credit card", "processing time", "payment speed", "how long"]
+  },
+  {
+    "id": 5,
+    "category": "billing",
+    "topic": "Late payment fees",
+    "question": "What happens if I pay late?",
+    "answer": "Late payments may incur a late fee based on the number of days past the due date. We recommend contacting our billing team before the due date if you anticipate a delay, as we can often arrange a short grace period.",
+    "keywords": ["late payment", "late fee", "overdue", "penalty"]
+  },
+  {
+    "id": 6,
+    "category": "billing",
+    "topic": "Extra and processing charges",
+    "question": "Are there any extra or additional charges on my invoice?",
+    "answer": "Additional processing charges may apply depending on your chosen payment method. Bank transfers may carry a small processing fee, while credit card payments are typically included in your plan. Any applicable surcharges are itemised on your invoice.",
+    "keywords": ["extra charges", "additional fees", "processing fee", "surcharge", "invoice"]
+  },
+  {
+    "id": 7,
+    "category": "billing",
+    "topic": "Viewing invoices and statements",
+    "question": "How can I view or download my invoice?",
+    "answer": "You can view and download your invoices and payment statements directly from the Billing section of your account portal. Invoices are generated automatically at the end of each billing period and are also emailed to your registered address.",
+    "keywords": ["invoice", "statement", "download", "view invoice", "billing history"]
+  },
+  {
+    "id": 8,
+    "category": "billing",
+    "topic": "Updating payment method",
+    "question": "How do I update or change my payment method?",
+    "answer": "You can update your payment method at any time in the Billing section of your account settings. Changes take effect from the next billing cycle. If you need to update it urgently before an upcoming payment, please contact our billing team directly.",
+    "keywords": ["update payment", "change payment", "new credit card", "payment method"]
+  },
+  {
+    "id": 9,
+    "category": "billing",
+    "topic": "Accepted payment options",
+    "question": "What accepted payment options are available for my account?",
+    "answer": "We accept credit cards (Visa, Mastercard, American Express), bank transfers, and major online payment services such as PayPal. Credit card transactions are typically processed the quickest.",
+    "keywords": ["accepted payment options", "payment options", "payment procedures", "how to pay"]
+  },
+  {
+    "id": 10,
+    "category": "billing",
+    "topic": "Potential extra charges",
+    "question": "What potential extra charges could appear on my bill?",
+    "answer": "Additional processing charges may apply depending on your chosen payment method. Bank transfers may carry a small processing fee, while credit card payments are typically included in your plan. Any applicable surcharges are clearly itemised on your invoice so you can see exactly what you have been charged.",
+    "keywords": ["potential extra charges", "unexpected charges", "additional costs", "extra fees", "billing inconsistencies"]
+  },
+  {
+    "id": 11,
+    "category": "returns",
+    "topic": "Return window",
+    "question": "How long do I have to return a product?",
+    "answer": "Our standard return window is 30 days from the date of delivery. Items must be in their original condition and packaging. Some product categories (e.g. personalised or digital goods) are not eligible for return.",
+    "keywords": ["return window", "how long to return", "return period", "30 days"]
+  },
+  {
+    "id": 12,
+    "category": "returns",
+    "topic": "How to initiate a return",
+    "question": "How do I start a return or exchange?",
+    "answer": "To initiate a return, log in to your account, go to Order History, and select the item you wish to return. Follow the on-screen instructions to generate a prepaid return label. You can also contact our support team and we will guide you through the process.",
+    "keywords": ["start return", "initiate return", "how to return", "return label", "exchange"]
+  },
+  {
+    "id": 13,
+    "category": "returns",
+    "topic": "Refund timeline",
+    "question": "How long does a refund take?",
+    "answer": "Once we receive and inspect your returned item, refunds are typically processed within 5\u20137 business days. Credit card refunds may take an additional 3\u20135 business days to appear on your statement depending on your card issuer.",
+    "keywords": ["refund timeline", "how long refund", "when refund", "refund processing"]
+  },
+  {
+    "id": 14,
+    "category": "returns",
+    "topic": "Non-returnable items",
+    "question": "What items cannot be returned?",
+    "answer": "Items that are not eligible for return include: personalised or custom-made products, digital downloads once accessed, perishable goods, and items marked as final sale. Please check the product page before purchasing for any specific restrictions.",
+    "keywords": ["non-returnable", "cannot return", "ineligible", "final sale", "no returns"]
+  },
+  {
+    "id": 15,
+    "category": "technical",
+    "topic": "Password reset",
+    "question": "How do I reset my password?",
+    "answer": "To reset your password, click 'Forgot Password' on the login page and enter your registered email address. You will receive a password reset link within a few minutes. If you do not receive the email, please check your spam folder or contact support.",
+    "keywords": ["password reset", "forgot password", "change password", "login"]
+  },
+  {
+    "id": 16,
+    "category": "technical",
+    "topic": "Reporting a service outage",
+    "question": "How do I report a service outage or downtime?",
+    "answer": "If you are experiencing a service outage, please contact our Technical Support team immediately so we can investigate and escalate as needed. You can also check our system status page for any known incidents. We aim to respond to outage reports within 30 minutes.",
+    "keywords": ["service outage", "downtime", "system down", "not working", "report outage"]
+  },
+  {
+    "id": 17,
+    "category": "technical",
+    "topic": "Supported browsers",
+    "question": "Which browsers are supported?",
+    "answer": "Our platform supports the latest two versions of Chrome, Firefox, Safari, and Microsoft Edge. For the best experience we recommend using Google Chrome. Internet Explorer is not supported.",
+    "keywords": ["supported browsers", "browser", "Chrome", "Firefox", "Safari", "Edge"]
+  },
+  {
+    "id": 18,
+    "category": "general",
+    "topic": "Contacting support",
+    "question": "How do I contact customer support?",
+    "answer": "You can reach our customer support team by email, live chat, or phone. Our support portal is available 24/7 for submitting tickets, and live agents are available Monday to Friday, 9am\u20136pm in your local timezone.",
+    "keywords": ["contact support", "customer service", "help", "reach support"]
+  },
+  {
+    "id": 19,
+    "category": "general",
+    "topic": "Support hours",
+    "question": "What are your support hours?",
+    "answer": "Live agent support is available Monday to Friday, 9am\u20136pm in your local timezone. Outside of these hours, you can submit a ticket through our support portal and we will respond on the next business day. Emergency technical support is available 24/7 for enterprise customers.",
+    "keywords": ["support hours", "opening hours", "when available", "business hours"]
+  },
+  {
+    "id": 20,
+    "category": "general",
+    "topic": "Account tiers and plans",
+    "question": "What are the different account tiers?",
+    "answer": "We offer three account tiers: Standard, Premium, and Enterprise. Standard provides core features with email support. Premium adds priority support and advanced features. Enterprise includes dedicated account management, SLA guarantees, and 24/7 emergency support. Contact our sales team for pricing.",
+    "keywords": ["account tier", "pricing", "plans", "standard", "premium", "enterprise"]
+  },
+  {
+    "id": 21,
+    "category": "general",
+    "topic": "Financial products overview",
+    "question": "What financial products or investment and savings solutions do you offer?",
+    "answer": "We offer a diverse selection of investment and savings solutions tailored to various needs, including high-yield savings accounts, fixed-term deposits, mutual funds, and retirement plans. Each product features specific benefits, interest rates, fees, and minimum deposit requirements, and caters to different risk levels suitable for various customer profiles. Detailed brochures covering all these aspects are available, along with information on current promotional offers.",
+    "keywords": ["financial products", "investment", "savings", "high-yield savings", "fixed-term deposits", "mutual funds", "retirement plans", "interest rates", "fees", "promotions"]
+  },
+  {
+    "id": 22,
+    "category": "general",
+    "topic": "Marketing services overview",
+    "question": "What marketing packages or digital marketing services do you offer?",
+    "answer": "We offer a variety of digital and traditional marketing packages, including social media management, SEO, email marketing, content development, print advertising, and more. Our pricing is adaptable, allowing us to create customised plans that suit specific business requirements. Case studies relevant to a customer's industry are available upon request. To deliver tailored information, we may ask for details such as industry, business objectives, and budget preferences.",
+    "keywords": ["marketing packages", "digital marketing", "social media management", "SEO", "email marketing", "content development", "print advertising", "pricing", "customised plans", "case studies"]
+  },
+  {
+    "id": 23,
+    "category": "technical_support",
+    "topic": "Scheduled maintenance and service disruptions",
+    "question": "What are the upcoming service disruptions and maintenance schedules, and who can customers contact during maintenance periods?",
+    "answer": "Scheduled outages and maintenance windows in the near future are expected to impact big data lakes, analytical models, and automated investment platforms. Maintenance plans include advance notifications with detailed information about the timing, affected components, expected downtime, and recommended preparations. For urgent issues during maintenance periods, customers may contact the support hotline at <tel_num> to reach the designated support team.",
+    "keywords": ["maintenance", "service disruption", "outage", "downtime", "maintenance window", "big data", "analytical models", "automated investment", "support hotline", "scheduled maintenance"]
+  },
+  {
+    "id": 24,
+    "category": "general",
+    "topic": "Seagate Expansion Drive integration for healthcare compliance",
+    "question": "What are the best practices for integrating Seagate Expansion drives in a healthcare storage environment with HIPAA and GDPR compliance requirements?",
+    "answer": "To integrate Seagate Expansion drives in a HIPAA and GDPR compliant healthcare environment, we recommend implementing hardware encryption, enforcing strict access controls, performing regular firmware updates, and adopting secure backup practices. To provide more precise advice tailored to your setup, please specify your operating system and storage environment.",
+    "keywords": ["Seagate", "expansion drive", "healthcare", "HIPAA", "GDPR", "compliance", "encryption", "access controls", "firmware updates", "backup", "storage"]
+  }
+]
