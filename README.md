@@ -16,29 +16,4 @@ Tools are exposed as a Click CLI (`cli.py`) that outputs structured JSON. Workfl
 
 **Transport:** subprocess (`python cli.py <namespace> <command> [--flags]`)
 
-## Shared infrastructure
-
-Both projects use the same Postgres + pgvector setup and the same email dataset. Each project manages its own database and has its own `.env` file — they are fully independent.
-
-`agent-cli` additionally persists every eval run to `pipeline_runs` + `pipeline_results` tables and ships a [static showcase](https://htmlpreview.github.io/?https://github.com/mlsamuel/agents/blob/main/agent-cli/ui/showcase/index.html) — open it in any browser with no servers required.
-
-```
-agents/
-├── agent-mcp/    # MCP transport variant
-│   └── .env      # per-project credentials + DATABASE_URL
-└── agent-cli/    # CLI transport variant
-    └── .env      # per-project credentials + DATABASE_URL
-```
-
-## Setup
-
-Copy `.env.example` inside the subproject you want to run:
-
-```bash
-cp agent-cli/.env.example agent-cli/.env
-# or
-cp agent-mcp/.env.example agent-mcp/.env
-# edit: ANTHROPIC_API_KEY=... DATABASE_URL=...
-```
-
-Then follow the setup instructions in the subproject README.
+Eval results are persisted to Postgres and viewable as a [static showcase](https://htmlpreview.github.io/?https://github.com/mlsamuel/agents/blob/main/agent-cli/ui/showcase/index.html) — no servers required.
