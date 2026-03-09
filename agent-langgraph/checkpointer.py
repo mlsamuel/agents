@@ -27,14 +27,22 @@ from dotenv import load_dotenv
 
 load_dotenv(Path(__file__).parent / ".env")
 
+# Module-level pool — created once, reused across the pipeline run.
+_pool = None
+
 
 async def get_checkpointer():
     """
     Create and return an AsyncPostgresSaver backed by the agents_langgraph database.
 
+    Uses an AsyncConnectionPool (psycopg3) so the checkpointer stays open for
+    the entire pipeline run without needing an async context manager.
     Calls setup() on first use to create the checkpoint tables if they don't exist.
     """
+    global _pool
+
     from langgraph.checkpoint.postgres.aio import AsyncPostgresSaver
+    from psycopg_pool import AsyncConnectionPool
 
     db_url = os.environ.get("DATABASE_URL", "")
     if not db_url:
@@ -43,6 +51,15 @@ async def get_checkpointer():
             "Add it to .env: postgresql://agents:agents@localhost:5432/agents_langgraph"
         )
 
-    checkpointer = AsyncPostgresSaver.from_conn_string(db_url)
+    if _pool is None:
+        _pool = AsyncConnectionPool(
+            conninfo=db_url,
+            max_size=5,
+            kwargs={"autocommit": True, "prepare_threshold": 0},
+            open=False,
+        )
+        await _pool.open()
+
+    checkpointer = AsyncPostgresSaver(_pool)
     await checkpointer.setup()
     return checkpointer

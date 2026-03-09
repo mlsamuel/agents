@@ -17,3 +17,9 @@ Tools are exposed as a Click CLI (`cli.py`) that outputs structured JSON. Workfl
 **Transport:** subprocess (`python cli.py <namespace> <command> [--flags]`)
 
 Eval results are persisted to Postgres and viewable as a [static showcase](https://htmlpreview.github.io/?https://github.com/mlsamuel/agents/blob/main/agent-cli/ui/showcase/index.html) — no servers required.
+
+### [agent-langgraph](agent-langgraph/)
+
+The same pipeline orchestrated as an explicit LangGraph `StateGraph`. Demonstrates LangGraph-specific patterns: Send API for parallel fan-out, compiled sub-graphs as nodes, `ToolNode` for in-process tool execution, a critic reflection loop inside each specialist agent, `interrupt()` for human-in-the-loop escalation review, and `AsyncPostgresSaver` for checkpoint persistence.
+
+**Transport:** in-process (`ToolNode` + `@tool` decorated functions — no server, no subprocess)
