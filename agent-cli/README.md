@@ -162,7 +162,7 @@ python ui/export_showcase.py --run 3   # specific run id
 open ui/showcase/index.html
 ```
 
-Generates a fully self-contained file with data, CSS, and JS inlined — open it with a double-click in any browser. The file at `ui/showcase/index.html` is committed to the repo.
+Generates a fully self-contained file with data, CSS, and JS inlined — open it with a double-click in any browser. The file at `ui/showcase/index.html` is committed to the repo: [view showcase](https://htmlpreview.github.io/?https://github.com/mlsamuel/agents/blob/main/agent-cli/ui/showcase/index.html)
 
 ### Live UI (React + FastAPI)
 

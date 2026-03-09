@@ -20,7 +20,7 @@ Tools are exposed as a Click CLI (`cli.py`) that outputs structured JSON. Workfl
 
 Both projects use the same Postgres + pgvector backend (skills, knowledge base, agent guidelines, training set), the same email dataset, and the same eval/improve loop. The `.env` file at the repo root is shared.
 
-`agent-cli` additionally persists every eval run to `pipeline_runs` + `pipeline_results` tables and ships a static showcase — open it in any browser with no servers required: [view showcase](https://htmlpreview.github.io/?https://github.com/mlsamuel/agents/blob/main/agent-cli/ui/showcase/index.html)
+`agent-cli` additionally persists every eval run to `pipeline_runs` + `pipeline_results` tables and ships a static showcase at `agent-cli/ui/showcase/index.html` — open it in any browser with no servers required.
 
 ```
 agents/
