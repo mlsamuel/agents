@@ -14,10 +14,6 @@ Usage:
 
 import argparse
 import os
-import socket
-import subprocess
-import sys
-import time
 from pathlib import Path
 
 from dotenv import load_dotenv
@@ -39,20 +35,6 @@ import skills as skills_db
 from skills import rollback_skill
 
 load_dotenv()
-
-_MCP_SERVER = Path(__file__).parent / "mcp_server.py"
-_MCP_PORT   = int(os.environ.get("MCP_PORT", "8765"))
-
-
-def _wait_for_mcp(host: str, port: int, timeout: float = 10.0) -> None:
-    deadline = time.time() + timeout
-    while time.time() < deadline:
-        try:
-            with socket.create_connection((host, port), timeout=1):
-                return
-        except OSError:
-            time.sleep(0.1)
-    raise RuntimeError(f"MCP server did not start on {host}:{port} within {timeout}s")
 
 
 async def main():
@@ -85,13 +67,6 @@ async def main():
     await kb.get_pool()
     await skills_db.get_pool()
 
-    mcp_proc = subprocess.Popen(
-        [sys.executable, str(_MCP_SERVER), "--transport", "streamable-http"],
-        env={**os.environ},
-    )
-    _wait_for_mcp("127.0.0.1", _MCP_PORT)
-    print(f"MCP server started (pid={mcp_proc.pid}, port={_MCP_PORT})\n")
-
     client = Client()
     output_sections: list[dict] = []
 
@@ -117,8 +92,7 @@ async def main():
     if run_eval and args.save:
         init_output(out_path)
 
-    try:
-        for i, email in enumerate(
+    for i, email in enumerate(
             email_stream(language=args.language, limit=args.limit,
                          offset=args.offset, shuffle=args.shuffle),
             args.offset + 1,
@@ -276,10 +250,6 @@ async def main():
                 print(f"  [error]       {exc}")
 
             print("=" * 70)
-
-    finally:
-        mcp_proc.terminate()
-        mcp_proc.wait()
 
     if not run_eval:
         print(f"\n{client.usage_summary()}")

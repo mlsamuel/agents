@@ -21,14 +21,9 @@ import sys
 _CALL_PREFIX = "__CALL__:"
 _RESULT_PREFIX = "__RESULT__:"
 
-# Namespace → allowed method names (must match _TOOL_REGISTRY in mcp_server.py)
-_NAMESPACE_METHODS: dict[str, list[str]] = {
-    "crm":     ["lookup_customer", "get_ticket_history"],
-    "orders":  ["check_order_status", "process_refund"],
-    "tickets": ["create_ticket"],
-    "comms":   ["send_reply", "escalate_to_human"],
-    "kb":      ["search_knowledge_base"],
-}
+# Namespace → allowed method names — passed in by the host via NAMESPACE_METHODS env var
+# (derived from tool_registry.BY_NAMESPACE in cli.py at container launch time)
+_NAMESPACE_METHODS: dict[str, list[str]] = json.loads(os.environ.get("NAMESPACE_METHODS", "{}"))
 
 
 def _make_method(ns: str, fn: str):

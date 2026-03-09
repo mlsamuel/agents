@@ -1,6 +1,8 @@
-# Customer Support Agent System
+# Customer Support Agent System — CLI Edition
 
-A multi-agent customer support pipeline built with Claude and the Model Context Protocol (MCP). Emails are classified, routed to specialist workflow agents, and handled using skill files that drive tool selection and reply logic. An integrated eval+improve loop scores replies and automatically updates skills, the knowledge base, and agent guidelines.
+A multi-agent customer support pipeline built with Claude and a CLI tool interface. Emails are classified, routed to specialist workflow agents, and handled using skill files that drive tool selection and reply logic. An integrated eval+improve loop scores replies and automatically updates skills, the knowledge base, and agent guidelines.
+
+This project is a variant of `agent-mcp` that replaces the MCP server with a CLI interface: instead of connecting to a protocol server over HTTP, workflow agents invoke `cli.py` as a subprocess and parse its structured JSON output — the same pattern used by [googleworkspace/cli](https://github.com/googleworkspace/cli).
 
 ## Architecture
 
@@ -19,17 +21,16 @@ classifier                    ← Haiku: queue / type / priority
 orchestrator_agent            ← Sonnet: decomposes multi-topic emails,
     │                            fans out to parallel WorkflowAgents
     ▼
-workflow_agent(s)             ← Sonnet + MCP tools via skill files (from DB)
-    │   ├── lookup_customer           connects to persistent mcp_server.py
-    │   ├── get_ticket_history        over streamable-HTTP (one process per
-    │   ├── create_ticket             pipeline run, shared across all emails)
+workflow_agent(s)             ← Sonnet + CLI tools via skill files (from DB)
+    │   ├── lookup_customer           invokes cli.py as a subprocess
+    │   ├── get_ticket_history        each call returns structured JSON
+    │   ├── create_ticket             no server process required
     │   ├── check_order_status
     │   ├── process_refund
     │   ├── escalate_to_human
     │   ├── send_reply
     │   ├── search_knowledge_base     ← pgvector ANN over knowledge_base table
-    │   ├── search_agent_guidelines   ← pgvector ANN over agent_guidelines table
-    │   └── run_code (sandboxed Python)
+    │   └── search_agent_guidelines   ← pgvector ANN over agent_guidelines table
     ▼
 merged reply + WorkflowResult
     │
@@ -45,19 +46,32 @@ improver                      ← Sonnet: proposes skill_edit / kb_entry /
 Postgres (skills + knowledge_base + agent_guidelines + training_set tables)
 ```
 
-Skills are stored in the `skills` Postgres table (versioned, with `is_active` flag). The knowledge base lives in the `knowledge_base` table and agent-facing handling patterns in `agent_guidelines`, both with pgvector HNSW indexes. A `training_set` table holds up to 3 golden emails per skill for regression testing after each apply.
+### CLI tool interface
 
-All tables are seeded from `data/` on first run: `skills/**/*.md`, `data/knowledge_base.json`, `data/agent_guidelines.json`, `data/training_set.json`.
+Tools are implemented in `tools.py` and exposed as CLI commands via `cli.py`:
 
-`pipeline.py` starts `mcp_server.py` as a persistent HTTP subprocess at startup (port 8765) and terminates it when the run finishes. All workflow agents in a run share the same server process, so the embedding model and DB connection pool are initialised once.
+```
+python cli.py <namespace> <command> [--flags]
+```
+
+| Namespace | Commands |
+|-----------|----------|
+| `crm`     | `lookup-customer`, `ticket-history` |
+| `orders`  | `check-status`, `process-refund` |
+| `tickets` | `create` |
+| `comms`   | `send-reply`, `escalate` |
+| `kb`      | `search`, `guidelines` |
+
+Every command outputs structured JSON to stdout. See [SKILL.md](SKILL.md) for the full command reference with example inputs and outputs.
+
+When Claude calls a tool, `workflow_agent.py` maps the tool name to a CLI command, runs it via `subprocess.run`, and feeds the JSON stdout back as the tool result — no sockets, no protocol server.
 
 ## Setup
 
-**1. Clone and install dependencies**
+**1. Install dependencies**
 
 ```bash
-git clone <repo-url>
-cd agents
+cd agent-cli
 pip install -r requirements.txt
 ```
 
@@ -70,20 +84,14 @@ cp .env.example .env
 # edit .env — required:
 #   ANTHROPIC_API_KEY=...
 #   DATABASE_URL=postgresql://user:pass@host/dbname
-#
-# optional (defaults shown):
-#   MCP_PORT=8765          — port the MCP server binds to
-#   MCP_SERVER_URL=http://127.0.0.1:8765/mcp  — URL workflow agents connect to
 ```
 
 The database schema (tables, HNSW indexes) is created automatically on first run. Seed data is loaded from `data/` if the tables are empty.
 
-**3. Docker sandbox (required for `run_code`)**
-
-`run_code` executes agent-generated Python in a Docker container for isolation. Without Docker, `run_code` calls return an error and the agent cannot use that tool.
+**3. Start Postgres**
 
 ```bash
-docker pull python:3.12-slim
+docker-compose up -d
 ```
 
 **4. Run the pipeline**
@@ -133,7 +141,15 @@ python pipeline.py --limit 10
 python pipeline.py --no-apply --limit 5
 ```
 
-### How the improve loop works
+### Test CLI tools directly
+
+```bash
+python cli.py crm lookup-customer --keyword "Jane Smith"
+python cli.py orders check-status --order-ref ORD-00123456
+python cli.py kb search --query "refund policy" --category billing
+```
+
+## How the improve loop works
 
 After each email is scored, if the average is below `--min-score`, the improver analyses the skill used and proposes targeted changes.
 
@@ -150,19 +166,19 @@ After each email is scored, if the average is below `--min-score`, the improver 
 
 **Versioning** — skill, KB, and guideline updates are non-destructive. The previous active row is set `is_active = false`; a new row with an incremented `version` is inserted. Old versions remain for audit and rollback.
 
-**Regression testing** — after each `--apply`, the training emails for the affected skill are re-evaluated (classify → orchestrate → judge). If any email scores below avg 3.5 and the proposal was a `skill_edit`, the new skill version is automatically deactivated and the previous version restored. A warning is logged either way. The current email is also added to the training set if there is room (up to 3 per skill).
-
-**EVAL SUMMARY** — printed at the end of each run; includes per-dimension scores, a count of skills edited, KB entries added, guidelines added, training emails added, and estimated API cost for the run.
+**Regression testing** — after each `--apply`, the training emails for the affected skill are re-evaluated (classify → orchestrate → judge). If any email scores below avg 3.5 and the proposal was a `skill_edit`, the new skill version is automatically deactivated and the previous version restored. The current email is also added to the training set if there is room (up to 3 per skill).
 
 ## Project structure
 
 ```
-agents/
+agent-cli/
 ├── pipeline.py               # unified entry point: screen → classify → orchestrate → eval → improve
+├── cli.py                    # Click CLI — exposes all tools as JSON-output commands
+├── tools.py                  # pure tool implementations (no framework dependency)
+├── SKILL.md                  # CLI command reference for agents and humans
 ├── classifier.py             # email classifier (Haiku)
 ├── orchestrator_agent.py     # decomposes + fans out to workflow agents
-├── workflow_agent.py         # skill-based tool-use loop (Sonnet + MCP)
-├── mcp_server.py             # FastMCP server — all support backend tools
+├── workflow_agent.py         # skill-based tool-use loop (Sonnet + CLI subprocess)
 ├── email_stream.py           # reads data/emails.csv
 ├── email_sanitizer.py        # pattern-based injection strip
 ├── input_screener.py         # LLM-based injection detector
@@ -173,6 +189,7 @@ agents/
 ├── skills.py                 # asyncpg pool, skill loading and versioning
 ├── logger.py                 # shared logging config
 ├── client.py                 # Anthropic client wrapper with retry and per-model cost tracking
+├── docker-compose.yml        # Postgres + pgvector
 ├── data/skills/
 │   ├── billing/
 │   ├── general/
