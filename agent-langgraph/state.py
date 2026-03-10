@@ -110,5 +110,9 @@ class AgentState(TypedDict):
     revision_count: int         # incremented by critic each cycle (max 2)
     critic_feedback: str | None # critic's suggested improvement; None means accept
 
+    # run_code retry loop
+    run_code_retries: int              # counts run_code failures in this sub-graph turn
+    pending_code_retry_prompt: str | None  # injected into next agent turn; consumed and cleared
+
     # Final packed result — set by critic node when done
     result: AgentResult | None

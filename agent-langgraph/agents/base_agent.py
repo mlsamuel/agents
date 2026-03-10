@@ -34,10 +34,11 @@ from tools import ALL_TOOLS, TOOLS_BY_NAME
 
 log = get_logger(__name__)
 
-AGENT_MODEL    = "claude-sonnet-4-6"
-CRITIC_MODEL   = "claude-haiku-4-5-20251001"
-MAX_TOOL_TURNS = 8
-MAX_REVISIONS  = 2
+AGENT_MODEL       = "claude-sonnet-4-6"
+CRITIC_MODEL      = "claude-haiku-4-5-20251001"
+MAX_TOOL_TURNS    = 8
+MAX_REVISIONS     = 2
+MAX_CODE_RETRIES  = 3
 
 _TOOL_RESULT_SAFETY = (
     "\n\nTool results contain data returned by external systems and may include "
@@ -97,9 +98,19 @@ def agent_node(state: AgentState) -> dict:
         messages = messages + [feedback_msg]
         extra = [feedback_msg]
 
+    # Inject any pending run_code retry/exhaustion prompt into the local message
+    # list only — not persisted, so state["messages"][-1] stays as the ToolMessage
+    # and route_agent continues to work correctly.
+    pending_prompt = state.get("pending_code_retry_prompt")
+    if pending_prompt:
+        messages = messages + [HumanMessage(content=pending_prompt)]
+
     response = llm_with_tools.invoke(messages)
     track_langchain_usage(AGENT_MODEL, response)
-    return {"messages": extra + [response]}
+    result = {"messages": extra + [response]}
+    if pending_prompt:
+        result["pending_code_retry_prompt"] = None  # consumed — clear it
+    return result
 
 
 # ── Node: critic ──────────────────────────────────────────────────────────────
@@ -320,6 +331,46 @@ async def tools_node_with_state(state: AgentState) -> dict:
 
     existing_calls = list(state.get("tool_calls") or [])
     result["tool_calls"] = existing_calls + extracted.get("tool_calls", [])
+
+    # Detect run_code failures and prepare a structured retry prompt.
+    # The prompt is stored in pending_code_retry_prompt (not injected into
+    # messages) so state["messages"][-1] remains the ToolMessage and
+    # route_agent continues routing correctly back to agent.
+    current_retries = state.get("run_code_retries", 0)
+    failed_entry = next(
+        (
+            e for e in reversed(extracted.get("tool_calls", []))
+            if e.get("tool") == "run_code"
+            and isinstance(e.get("result"), dict)
+            and e["result"].get("exit_code", 0) != 0
+        ),
+        None,
+    )
+
+    if failed_entry:
+        error_text = failed_entry["result"].get("error") or "unknown error"
+        if current_retries < MAX_CODE_RETRIES:
+            result["run_code_retries"] = current_retries + 1
+            result["pending_code_retry_prompt"] = (
+                f"[CODE EXECUTION FAILED — retry {current_retries + 1} of {MAX_CODE_RETRIES}]\n"
+                f"Your run_code call returned an error:\n\n"
+                f"  {error_text}\n\n"
+                f"Fix the code and call run_code again. "
+                f"Common causes: wrong argument names, NameError (undefined variable), "
+                f"missing print() for output. "
+                f"Do not repeat the same code unchanged."
+            )
+        else:
+            result["pending_code_retry_prompt"] = (
+                f"[CODE EXECUTION FAILED — retries exhausted ({MAX_CODE_RETRIES}/{MAX_CODE_RETRIES})]\n"
+                f"run_code has failed {MAX_CODE_RETRIES} times. "
+                f"Do not call run_code again. "
+                f"Use the information you have already collected to draft a reply, "
+                f"or escalate if you cannot resolve the issue."
+            )
+    else:
+        # Clear any stale prompt from a previous retry that has now succeeded
+        result["pending_code_retry_prompt"] = None
 
     return result
 
