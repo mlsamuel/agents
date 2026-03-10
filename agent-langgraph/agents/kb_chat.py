@@ -21,7 +21,7 @@ sys.path.insert(0, str(_ROOT))
 from dotenv import load_dotenv
 from langchain_anthropic import ChatAnthropic
 from langchain_core.tools import tool
-from langchain.agents import create_react_agent  # re-exports langgraph.prebuilt.create_react_agent → CompiledStateGraph
+from langgraph.prebuilt import create_react_agent
 
 load_dotenv(_ROOT / ".env")
 

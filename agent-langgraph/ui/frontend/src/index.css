@@ -542,3 +542,30 @@
   opacity: 0.4;
   cursor: not-allowed;
 }
+
+.chat-toolbar {
+  display: flex;
+  justify-content: flex-end;
+  padding-bottom: 8px;
+}
+
+.chat-new-btn {
+  background: none;
+  border: 1px solid var(--border);
+  border-radius: 6px;
+  padding: 4px 10px;
+  font-size: 12px;
+  font-family: inherit;
+  color: var(--text-muted);
+  cursor: pointer;
+}
+
+.chat-new-btn:hover {
+  background: var(--surface-2);
+  color: var(--text);
+}
+
+.chat-new-btn:disabled {
+  opacity: 0.4;
+  cursor: not-allowed;
+}

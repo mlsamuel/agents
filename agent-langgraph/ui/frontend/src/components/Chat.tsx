@@ -6,12 +6,13 @@ interface Message {
   searching?: boolean;  // true while tool call is in flight
 }
 
+const THREAD_KEY = "kb_chat_thread_id";
+
 function getThreadId(): string {
-  const key = "kb_chat_thread_id";
-  let id = sessionStorage.getItem(key);
+  let id = sessionStorage.getItem(THREAD_KEY);
   if (!id) {
     id = "chat-" + crypto.randomUUID();
-    sessionStorage.setItem(key, id);
+    sessionStorage.setItem(THREAD_KEY, id);
   }
   return id;
 }
@@ -22,6 +23,13 @@ export default function Chat() {
   const [streaming, setStreaming] = useState(false);
   const bottomRef = useRef<HTMLDivElement>(null);
   const threadId = useRef(getThreadId());
+
+  useEffect(() => {
+    fetch(`/api/chat/history/${threadId.current}`)
+      .then((r) => r.json())
+      .then((data: Message[]) => { if (data.length) setMessages(data); })
+      .catch(() => {});
+  }, []);
 
   useEffect(() => {
     bottomRef.current?.scrollIntoView({ behavior: "smooth" });
@@ -117,6 +125,13 @@ export default function Chat() {
     }
   }
 
+  function newChat() {
+    const id = "chat-" + crypto.randomUUID();
+    sessionStorage.setItem(THREAD_KEY, id);
+    threadId.current = id;
+    setMessages([]);
+  }
+
   function handleKeyDown(e: React.KeyboardEvent) {
     if (e.key === "Enter" && !e.shiftKey) {
       e.preventDefault();
@@ -126,6 +141,11 @@ export default function Chat() {
 
   return (
     <div className="chat-container">
+      <div className="chat-toolbar">
+        <button className="chat-new-btn" onClick={newChat} disabled={streaming}>
+          + New chat
+        </button>
+      </div>
       <div className="chat-messages">
         {messages.length === 0 && (
           <div className="chat-empty">
