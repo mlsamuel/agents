@@ -1,6 +1,6 @@
 # Customer Support Agent System — LangGraph Edition
 
-A multi-agent customer support pipeline built with LangChain and LangGraph. Emails are classified, routed to specialist workflow agents, and handled using skill files that drive tool selection and reply logic. An integrated eval+improve loop scores replies and automatically updates skills, the knowledge base, and agent guidelines.
+A multi-agent customer support pipeline built with LangChain and LangGraph. Emails are classified, routed to specialist workflow agents, and handled using skill files that drive tool selection and reply logic. An integrated eval+improve loop scores replies and automatically updates skills, the knowledge base, and agent guidelines. Every eval run and escalation queue can be viewed as a self-contained HTML showcase — [view showcase](https://htmlpreview.github.io/?https://github.com/mlsamuel/agents/blob/main/agent-langgraph/ui/showcase/index.html)
 
 This project implements the same pipeline as `agent-mcp` and `agent-cli` but orchestrates it as an explicit **StateGraph**, demonstrating LangGraph-specific patterns: the Send API for parallel fan-out, compiled sub-graphs as nodes, `ToolNode` for in-process tool execution, a reflection loop inside each specialist agent, a retry cycle in the main graph, and `interrupt()` for human-in-the-loop escalation review.
 
@@ -204,6 +204,19 @@ print(g.get_graph().draw_mermaid())
 " > graph.md
 ```
 
+### Static HTML showcase
+
+```bash
+python ui/export_showcase.py    # queries DB → ui/showcase/index.html
+open ui/showcase/index.html
+```
+
+Generates a fully self-contained file with data, CSS, and JS inlined — two tabs:
+- **Eval results** — latest pipeline run with ground truth vs generated side-by-side and scores
+- **Escalation review** — escalation queue showing the HITL UI with pending and resolved cards
+
+The file at `ui/showcase/index.html` is committed to the repo: [view showcase](https://htmlpreview.github.io/?https://github.com/mlsamuel/agents/blob/main/agent-langgraph/ui/showcase/index.html)
+
 ## How the improve loop works
 
 Same as `agent-cli` and `agent-mcp` — after each email is scored, if the average is below `--min-score`, the improver analyses the skill used and proposes targeted changes.
@@ -244,6 +257,9 @@ agent-langgraph/
 │   │   ├── main.py           # FastAPI server (port 8001): GET /api/escalations,
 │   │   │                     #   POST /api/escalations/{id}/decide → writes to escalation_queue
 │   │   └── requirements.txt  # fastapi, uvicorn
+│   ├── export_showcase.py    # queries DB → writes self-contained ui/showcase/index.html
+│   ├── showcase/
+│   │   └── index.html        # committed static showcase (regenerate with export_showcase.py)
 │   └── frontend/             # React 18 + Vite 5 + TypeScript
 │       ├── src/
 │       │   ├── App.tsx        # polls /api/escalations every 5 s

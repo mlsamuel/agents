@@ -23,3 +23,5 @@ Eval results are persisted to Postgres and viewable as a [static showcase](https
 The same pipeline orchestrated as an explicit LangGraph `StateGraph`. Demonstrates LangGraph-specific patterns: Send API for parallel fan-out, compiled sub-graphs as nodes, `ToolNode` for in-process tool execution, a critic reflection loop inside each specialist agent, `interrupt()` for human-in-the-loop escalation review, and `AsyncPostgresSaver` for checkpoint persistence.
 
 **Transport:** in-process (`ToolNode` + `@tool` decorated functions — no server, no subprocess)
+
+Eval results and the escalation review UI are viewable as a [static showcase](https://htmlpreview.github.io/?https://github.com/mlsamuel/agents/blob/main/agent-langgraph/ui/showcase/index.html) — no servers required.
