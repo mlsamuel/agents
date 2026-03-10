@@ -132,6 +132,11 @@ export default function Chat() {
     setMessages([]);
   }
 
+  async function clearChat() {
+    await fetch(`/api/chat/history/${threadId.current}`, { method: "DELETE" }).catch(() => {});
+    newChat();
+  }
+
   function handleKeyDown(e: React.KeyboardEvent) {
     if (e.key === "Enter" && !e.shiftKey) {
       e.preventDefault();
@@ -145,6 +150,11 @@ export default function Chat() {
         <button className="chat-new-btn" onClick={newChat} disabled={streaming}>
           + New chat
         </button>
+        {messages.length > 0 && (
+          <button className="chat-new-btn" onClick={clearChat} disabled={streaming}>
+            Clear history
+          </button>
+        )}
       </div>
       <div className="chat-messages">
         {messages.length === 0 && (

@@ -5,8 +5,9 @@ Endpoints:
   GET  /api/health
   GET  /api/escalations
   POST /api/escalations/{thread_id}/decide
-  GET  /api/chat/history/{thread_id}  ← prior messages from checkpointer
-  POST /api/chat/stream   ← SSE stream: create_react_agent + astream_events()
+  GET    /api/chat/history/{thread_id}  ← prior messages from checkpointer
+  DELETE /api/chat/history/{thread_id}  ← wipe a thread from the checkpointer
+  POST   /api/chat/stream   ← SSE stream: create_react_agent + astream_events()
 
 The pipeline service (pipeline.py --serve) polls for 'decided' rows and is
 the sole process that resumes LangGraph pipelines — this backend never imports
@@ -50,7 +51,7 @@ app = FastAPI(lifespan=lifespan)
 app.add_middleware(
     CORSMiddleware,
     allow_origins=["http://localhost:5173"],
-    allow_methods=["GET", "POST"],
+    allow_methods=["GET", "POST", "DELETE"],
     allow_headers=["*"],
 )
 
@@ -142,6 +143,17 @@ async def chat_history(thread_id: str):
             if content:
                 messages.append({"role": "assistant", "content": content})
     return messages
+
+
+@app.delete("/api/chat/history/{thread_id}")
+async def delete_chat_history(thread_id: str):
+    """Delete all checkpointer rows for a thread (wipes conversation history)."""
+    from checkpointer import get_checkpointer
+    cp = await get_checkpointer()
+    async with cp.conn.connection() as conn:
+        for table in ("checkpoint_writes", "checkpoint_blobs", "checkpoints"):
+            await conn.execute(f"DELETE FROM {table} WHERE thread_id = %s", (thread_id,))
+    return {"deleted": thread_id}
 
 
 @app.post("/api/chat/stream")
