@@ -50,7 +50,9 @@ def route_after_eval(state: PipelineState) -> str:
     avg         = state.get("eval_avg")
     retry_count = state.get("retry_count", 0)
 
-    if avg is not None and avg < MIN_IMPROVE_SCORE and retry_count < MAX_RETRIES:
+    if (state.get("run_improve", True)
+            and avg is not None and avg < MIN_IMPROVE_SCORE
+            and retry_count < MAX_RETRIES):
         return "improve"
 
     if _any_escalated_latest(state):

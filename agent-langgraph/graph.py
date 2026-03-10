@@ -167,6 +167,5 @@ def build_main_graph(checkpointer=None):
     compile_kwargs: dict = {}
     if checkpointer is not None:
         compile_kwargs["checkpointer"] = checkpointer
-        compile_kwargs["interrupt_before"] = ["wait_for_human"]
 
     return builder.compile(**compile_kwargs)

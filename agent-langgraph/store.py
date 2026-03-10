@@ -26,6 +26,14 @@ Public API (pipeline runs):
   create_run(limit_, offset_, language)             -> int
   store_result(run_id, section)                     -> None
   update_run_stats(run_id, sections)                -> None
+
+Public API (escalation queue):
+  add_escalation(thread_id, subject, ...)           -> None  (called by pipeline on interrupt)
+  submit_decision(thread_id, human_decision)        -> None  (called by UI backend on human action)
+  get_decided_escalations()                         -> list[dict]  (polled by pipeline --serve)
+  resolve_escalation(thread_id, status, decision)   -> None  (called by pipeline after resume)
+  get_pending_escalations()                         -> list[dict]
+  get_all_escalations()                             -> list[dict]
 """
 
 import json
@@ -129,6 +137,22 @@ CREATE TABLE IF NOT EXISTS pipeline_results (
     score_avg           FLOAT,
     score_comment       TEXT,
     created_at       TIMESTAMPTZ NOT NULL DEFAULT NOW()
+);
+
+CREATE TABLE IF NOT EXISTS escalation_queue (
+    thread_id        TEXT PRIMARY KEY,
+    subject          TEXT NOT NULL,
+    body             TEXT,
+    queue            TEXT,
+    priority         TEXT,
+    email_type       TEXT,
+    escalated_agents TEXT[] NOT NULL DEFAULT '{}',
+    summaries        TEXT[] NOT NULL DEFAULT '{}',
+    draft_replies    TEXT[] NOT NULL DEFAULT '{}',
+    status           TEXT NOT NULL DEFAULT 'pending',
+    human_decision   TEXT,
+    created_at       TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+    decided_at       TIMESTAMPTZ
 );
 """
 
@@ -535,3 +559,99 @@ async def update_run_stats(run_id: int, sections: list[dict]) -> None:
                WHERE id=$1""",
             run_id, total, avg_action, avg_completeness, avg_tone, avg_overall,
         )
+
+
+# ── Escalation queue ──────────────────────────────────────────────────────────
+
+async def add_escalation(
+    thread_id: str,
+    subject: str,
+    body: str,
+    queue: str,
+    priority: str,
+    email_type: str,
+    escalated_agents: list[str],
+    summaries: list[str],
+    draft_replies: list[str],
+) -> None:
+    """Write an escalation row before interrupt() so the UI can list pending reviews.
+
+    Uses INSERT ON CONFLICT DO NOTHING — idempotent if the graph retries the node.
+    """
+    pool = await get_pool()
+    async with pool.acquire() as conn:
+        await conn.execute(
+            """INSERT INTO escalation_queue
+               (thread_id, subject, body, queue, priority, email_type,
+                escalated_agents, summaries, draft_replies)
+               VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9)
+               ON CONFLICT (thread_id) DO NOTHING""",
+            thread_id, subject, body, queue, priority, email_type,
+            escalated_agents, summaries, draft_replies,
+        )
+    log.info("escalation: queued %s (%s)", thread_id, subject[:60])
+
+
+async def submit_decision(thread_id: str, human_decision: str) -> None:
+    """Record a human decision from the UI — sets status='decided' so pipeline --serve picks it up."""
+    pool = await get_pool()
+    async with pool.acquire() as conn:
+        await conn.execute(
+            """UPDATE escalation_queue
+               SET status = 'decided', human_decision = $2, decided_at = NOW()
+               WHERE thread_id = $1""",
+            thread_id, human_decision,
+        )
+    log.info("escalation: decision submitted for %s: %r", thread_id, human_decision[:60])
+
+
+async def get_decided_escalations() -> list[dict]:
+    """Return escalations with status='decided' that pipeline --serve should resume."""
+    pool = await get_pool()
+    async with pool.acquire() as conn:
+        rows = await conn.fetch(
+            "SELECT thread_id, human_decision FROM escalation_queue WHERE status = 'decided'"
+        )
+    return [dict(r) for r in rows]
+
+
+async def resolve_escalation(thread_id: str, status: str, human_decision: str) -> None:
+    """Mark an escalation as approved or overridden after the pipeline has resumed it."""
+    pool = await get_pool()
+    async with pool.acquire() as conn:
+        await conn.execute(
+            """UPDATE escalation_queue
+               SET status = $2, human_decision = $3, decided_at = NOW()
+               WHERE thread_id = $1""",
+            thread_id, status, human_decision,
+        )
+    log.info("escalation: resolved %s → %s", thread_id, status)
+
+
+async def get_pending_escalations() -> list[dict]:
+    """Return all escalations with status='pending', newest first."""
+    pool = await get_pool()
+    async with pool.acquire() as conn:
+        rows = await conn.fetch(
+            """SELECT thread_id, subject, body, queue, priority, email_type,
+                      escalated_agents, summaries, draft_replies,
+                      status, human_decision, created_at, decided_at
+               FROM escalation_queue
+               WHERE status = 'pending'
+               ORDER BY created_at DESC"""
+        )
+    return [dict(r) for r in rows]
+
+
+async def get_all_escalations() -> list[dict]:
+    """Return all escalations (pending + resolved), newest first."""
+    pool = await get_pool()
+    async with pool.acquire() as conn:
+        rows = await conn.fetch(
+            """SELECT thread_id, subject, body, queue, priority, email_type,
+                      escalated_agents, summaries, draft_replies,
+                      status, human_decision, created_at, decided_at
+               FROM escalation_queue
+               ORDER BY created_at DESC"""
+        )
+    return [dict(r) for r in rows]

@@ -54,6 +54,7 @@ async def run_email(
     compiled_graph,
     thread_id: str,
     run_eval: bool,
+    run_improve: bool = True,
 ) -> dict:
     """Run one email through the compiled graph. Returns final PipelineState."""
     initial_state = {
@@ -70,6 +71,7 @@ async def run_email(
         "human_decision": None,
         "eval_score": None,
         "eval_avg": None,
+        "run_improve": run_improve,
     }
     config = {"configurable": {"thread_id": thread_id}}
     return await compiled_graph.ainvoke(initial_state, config=config)
@@ -79,6 +81,35 @@ async def resume_pipeline(thread_id: str, decision: str, compiled_graph) -> dict
     """Resume an interrupted pipeline after a human decision."""
     config = {"configurable": {"thread_id": thread_id}}
     return await compiled_graph.ainvoke(Command(resume=decision), config=config)
+
+
+async def serve_mode(compiled_graph) -> None:
+    """
+    Long-running loop: poll escalation_queue for human decisions and resume them.
+
+    This is the sole process that calls ainvoke(Command(resume=...)) — the UI
+    backend only writes decisions to the DB and never imports the graph directly.
+
+    Status transitions handled here:
+      decided → (resume) → approved | overridden
+    """
+    print("Pipeline service running — polling for human decisions every 5s  (Ctrl+C to stop)")
+    while True:
+        decided = await kb.get_decided_escalations()
+        for row in decided:
+            thread_id = row["thread_id"]
+            decision  = row["human_decision"]
+            log.info("serve: resuming %s with decision %r", thread_id, decision)
+            print(f"\n  [serve] Resuming {thread_id}  decision={decision!r}")
+            try:
+                final_state = await resume_pipeline(thread_id, decision, compiled_graph)
+                status = "overridden" if decision.lower().startswith("override") else "approved"
+                await kb.resolve_escalation(thread_id, status, decision)
+                _print_result(final_state)
+            except Exception as exc:
+                log.error("serve: failed to resume %s: %s", thread_id, exc)
+                print(f"  [serve] ERROR resuming {thread_id}: {exc}")
+        await asyncio.sleep(5)
 
 
 # ── Main ───────────────────────────────────────────────────────────────────────
@@ -108,6 +139,9 @@ async def main():
                         help="Thread ID to resume after an escalation interrupt")
     parser.add_argument("--decision", type=str, default=None,
                         help="Human decision when resuming: 'approve' or 'override: <text>'")
+    parser.add_argument("--serve",    default=True, action=argparse.BooleanOptionalAction,
+                        help="After batch processing, poll for human decisions and resume "
+                             "interrupted pipelines (default: true)")
     args = parser.parse_args()
 
     run_eval    = args.eval
@@ -131,6 +165,11 @@ async def main():
         print(f"\nResuming thread '{args.resume}' with decision: {args.decision!r}")
         final_state = await resume_pipeline(args.resume, args.decision, compiled)
         _print_result(final_state, include_internal=args.internal_summary)
+        return
+
+    # ── Serve-only mode (--limit 0 --serve) ──────────────────────────────────
+    if args.limit == 0 and args.serve:
+        await serve_mode(compiled)
         return
 
     # ── Normal pipeline mode ─────────────────────────────────────────────────
@@ -172,7 +211,7 @@ async def main():
         thread_id = f"email-{run_uuid}-{i}"
 
         try:
-            final_state = await run_email(email, compiled, thread_id, run_eval)
+            final_state = await run_email(email, compiled, thread_id, run_eval, run_improve)
 
             # Check if pipeline paused due to escalation interrupt
             if not final_state.get("screen_passed") and final_state.get("screen_reason"):
@@ -204,7 +243,6 @@ async def main():
             escalated_but_no_decision = (
                 any(r.get("escalated") for r in results)
                 and final_state.get("human_decision") is None
-                and not final_state.get("final_reply")
             )
             if escalated_but_no_decision:
                 print(f"  [interrupt]   PAUSED — escalation requires human review")
@@ -274,6 +312,11 @@ async def main():
             print(f"  [error]       {exc}")
 
         print("=" * 70)
+
+    # ── Serve mode (poll for human decisions after batch) ────────────────────
+    if args.serve:
+        await serve_mode(compiled)
+        return
 
     # ── Summary ──────────────────────────────────────────────────────────────
     if not run_eval:

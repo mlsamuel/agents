@@ -86,6 +86,9 @@ class PipelineState(TypedDict):
     # Retry loop — incremented by improve_node each cycle (max 1 retry)
     retry_count: int
 
+    # Pipeline flags (set from CLI args, checked by routing)
+    run_improve: bool
+
 
 # ── Specialist agent sub-graph state ─────────────────────────────────────────
 

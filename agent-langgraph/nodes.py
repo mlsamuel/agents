@@ -24,6 +24,7 @@ from pathlib import Path
 from dotenv import load_dotenv
 from langchain_anthropic import ChatAnthropic
 from langchain_core.messages import HumanMessage, SystemMessage
+from langchain_core.runnables import RunnableConfig
 from langgraph.types import Send, interrupt
 
 from classifier import classify
@@ -35,6 +36,7 @@ from input_screener import screen_email
 from logger import get_logger
 from state import AgentResult, AgentState, PipelineState
 import skills as skills_db
+import store
 
 load_dotenv(Path(__file__).parent / ".env")
 
@@ -149,6 +151,8 @@ def _build_agent_initial_state(
         tool_calls=[],
         revision_count=0,
         critic_feedback=None,
+        run_code_retries=0,
+        pending_code_retry_prompt=None,
         result=None,
     )
 
@@ -271,7 +275,7 @@ def fan_out_node(state: PipelineState) -> list[Send]:
     return sends
 
 
-def wait_for_human_node(state: PipelineState) -> dict:
+async def wait_for_human_node(state: PipelineState, config: RunnableConfig) -> dict:
     """
     Human-in-the-loop node — uses LangGraph interrupt() to pause the pipeline.
 
@@ -282,8 +286,34 @@ def wait_for_human_node(state: PipelineState) -> dict:
 
     Requires the graph to be compiled with a Postgres checkpointer so the
     state is persisted across the suspension.
+
+    Writes a row to escalation_queue before calling interrupt() so the UI can
+    list pending reviews without parsing LangGraph checkpoint blobs.
     """
     escalated = [r for r in state.get("agent_results", []) if r.get("escalated")]
+    email = state.get("email") or {}
+    cls   = state.get("classification") or {}
+
+    thread_id = (config or {}).get("configurable", {}).get("thread_id", "")
+    log.info("wait_for_human: inserting escalation row for thread_id=%r", thread_id)
+
+    try:
+        await store.add_escalation(
+            thread_id=thread_id,
+            subject=email.get("subject", ""),
+            body=email.get("body", ""),
+            queue=cls.get("queue", ""),
+            priority=cls.get("priority", ""),
+            email_type=cls.get("type", ""),
+            escalated_agents=[r["agent_key"] for r in escalated],
+            summaries=[r.get("internal_summary", "") for r in escalated],
+            draft_replies=[r.get("reply_drafted", "") for r in escalated],
+        )
+        log.info("wait_for_human: escalation row inserted for thread_id=%r", thread_id)
+    except Exception as exc:
+        log.error("wait_for_human: failed to insert escalation row: %s", exc, exc_info=True)
+        raise
+
     payload = {
         "type": "escalation_review",
         "message": "One or more agent results require human review before proceeding.",
