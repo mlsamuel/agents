@@ -1,28 +1,45 @@
 """
 tools.py — LangChain @tool decorated functions for the support backend.
 
-This is the KEY ARCHITECTURAL DIFFERENTIATOR from agent-mcp and agent-cli:
-
-  agent-mcp:  tools are Python functions exposed via FastMCP over HTTP
-  agent-cli:  tools are Click CLI subcommands invoked via subprocess.run()
-  agent-langgraph: tools are @tool decorated Python functions executed
-                   in-process by LangGraph's ToolNode — no server, no subprocess.
-
-Tool implementations are identical to agent-mcp/mcp_server.py; only the
-decorator changes (@mcp.tool() → @tool).
+Tools are @tool decorated Python functions executed in-process by LangGraph's
+ToolNode — no server, no subprocess.
 
 Since the graph is run via ainvoke(), ToolNode supports async tools natively.
 The KB tools (search_knowledge_base, search_agent_guidelines) are async because
 store.py uses asyncpg.
 """
 
+import asyncio
+import base64
+import json
 import random
 import string
+import subprocess
+import threading
+import uuid
 from datetime import datetime, timedelta
+from pathlib import Path
 
 from langchain_core.tools import tool
 
 import store as kb
+
+# ── run_code sandbox config ────────────────────────────────────────────────────
+
+_SANDBOX_RUNNER = Path(__file__).parent / "sandbox_runner.py"
+_DOCKER_IMAGE   = "python:3.12-slim"
+
+# Namespace → method names passed to the Docker sandbox via NAMESPACE_METHODS env var.
+_NAMESPACE_METHODS: dict[str, list[str]] = {
+    "crm":     ["lookup_customer", "get_ticket_history"],
+    "orders":  ["check_order_status", "process_refund"],
+    "tickets": ["create_ticket"],
+    "comms":   ["send_reply", "escalate_to_human"],
+    "kb":      ["search_knowledge_base", "search_agent_guidelines"],
+}
+
+# Populated after tool definitions below.
+_TOOL_DISPATCH: dict[tuple[str, str], object] = {}
 
 # ── helpers ────────────────────────────────────────────────────────────────────
 
@@ -187,6 +204,126 @@ async def search_agent_guidelines(query: str, category: str = "") -> list:
     return await kb.search_guideline(query, category, top_k=3)
 
 
+# ── run_code implementation ────────────────────────────────────────────────────
+
+def _dispatch_to_langgraph(ns: str, fn: str, kwargs: dict) -> dict:
+    """Dispatch a sandboxed __CALL__ to an in-process Python function.
+    Called from the Docker stdout-reader thread — no running event loop here,
+    so asyncio.run() is safe for async KB tools."""
+    func = _TOOL_DISPATCH.get((ns, fn))
+    if func is None:
+        return {"__error__": f"Tool {ns}.{fn} not available"}
+    try:
+        result = func(**kwargs)
+        if asyncio.iscoroutine(result):
+            result = asyncio.run(result)
+        return result
+    except Exception as exc:
+        return {"__error__": str(exc)}
+
+
+def _run_code_docker(code: str, allowed_tools: list[str], timeout: int) -> dict:
+    """Run code in an isolated Docker container, dispatching tool calls in-process."""
+    code_b64 = base64.b64encode(code.encode()).decode()
+    name = f"sandbox-{uuid.uuid4().hex[:8]}"
+
+    cmd = [
+        "docker", "run", "--rm", "-i",
+        "--name", name,
+        "--network", "none",
+        "--memory", "128m",
+        "--cpus", "0.5",
+        "--read-only",
+        "--tmpfs", "/tmp:size=32m,noexec",
+        "-e", f"SANDBOX_CODE={code_b64}",
+        "-e", f"ALLOWED_TOOLS={json.dumps(allowed_tools)}",
+        "-e", "PYTHONDONTWRITEBYTECODE=1",
+        "-e", "PYTHONUNBUFFERED=1",
+        "-e", f"NAMESPACE_METHODS={json.dumps(_NAMESPACE_METHODS)}",
+        "-v", f"{_SANDBOX_RUNNER.resolve()}:/runner.py:ro",
+        _DOCKER_IMAGE,
+        "python", "/runner.py",
+    ]
+
+    try:
+        proc = subprocess.Popen(cmd, stdin=subprocess.PIPE, stdout=subprocess.PIPE, stderr=subprocess.PIPE)
+    except FileNotFoundError:
+        return {"stdout": "", "error": "docker executable not found", "exit_code": -1}
+
+    output_parts: list[str] = []
+    timed_out = False
+
+    def _kill_container():
+        nonlocal timed_out
+        timed_out = True
+        subprocess.run(["docker", "kill", name], capture_output=True)
+
+    timer = threading.Timer(timeout, _kill_container)
+    timer.start()
+
+    try:
+        while True:
+            raw_line = proc.stdout.readline()
+            if not raw_line:
+                break
+            line = raw_line.decode(errors="replace")
+            if line.startswith("__CALL__:"):
+                try:
+                    call = json.loads(line[9:])
+                    result = _dispatch_to_langgraph(call["ns"], call["fn"], call["kwargs"])
+                except Exception as exc:
+                    result = {"__error__": str(exc)}
+                proc.stdin.write(f"__RESULT__:{json.dumps(result)}\n".encode())
+                proc.stdin.flush()
+            else:
+                output_parts.append(line)
+    except BrokenPipeError:
+        pass
+    finally:
+        timer.cancel()
+        try:
+            proc.stdin.close()
+        except Exception:
+            pass
+
+    proc.wait()
+    exit_code = proc.returncode
+    stderr_text = proc.stderr.read().decode(errors="replace").strip()
+
+    if timed_out:
+        error: str | None = f"Code execution timed out after {timeout}s"
+        exit_code = -1
+    elif exit_code != 0:
+        error = stderr_text or f"Process exited with code {exit_code}"
+    else:
+        error = None
+
+    return {"stdout": "".join(output_parts)[:8192], "error": error, "exit_code": exit_code}
+
+
+@tool
+def run_code(code: str, allowed_tools: list[str], timeout: int = 10) -> dict:
+    """Execute a sandboxed Python snippet with access to approved tool namespaces.
+
+    Runs in a Docker container (--network none, read-only rootfs, 128MB RAM, 0.5 CPU).
+    Use print() to produce output — captured stdout is returned.
+
+    Available namespaces (specify in allowed_tools):
+      crm     - crm.lookup_customer(keyword), crm.get_ticket_history(customer_id)
+      orders  - orders.check_order_status(order_ref), orders.process_refund(order_ref, reason)
+      tickets - tickets.create_ticket(subject, body, queue, priority, ticket_type)
+      comms   - comms.send_reply(message, ticket_id), comms.escalate_to_human(ticket_id, reason)
+      kb      - kb.search_knowledge_base(query, category, top_k), kb.search_agent_guidelines(query, category)
+
+    Args:
+        code:          Python code to execute. Use print() to produce output.
+        allowed_tools: Namespaces to expose, e.g. ["crm", "tickets"]
+        timeout:       Max execution seconds (default 10, max 30)
+    """
+    timeout = max(1, min(timeout, 30))
+    return _run_code_docker(code, allowed_tools, timeout)
+
+
 # ── Registry ───────────────────────────────────────────────────────────────────
 
 ALL_TOOLS = [
@@ -199,6 +336,35 @@ ALL_TOOLS = [
     send_reply,
     search_knowledge_base,
     search_agent_guidelines,
+    run_code,
 ]
 
 TOOLS_BY_NAME: dict[str, object] = {t.name: t for t in ALL_TOOLS}
+
+# Dispatch table for the Docker sandbox bridge — populated here so all @tool
+# objects are defined before we reference their .func / .coroutine attributes.
+#
+# KB tools need a fresh asyncpg pool because _run_code_docker runs in a thread
+# pool executor with its own event loop (via asyncio.run()), separate from the
+# main LangGraph loop where store._pool was originally created.
+async def _kb_search(query: str, category: str = "", top_k: int = 3) -> list:
+    kb._pool = None  # force pool recreation in this event loop
+    return await kb.search(query, category, top_k)
+
+
+async def _kb_guidelines(query: str, category: str = "") -> list:
+    kb._pool = None  # force pool recreation in this event loop
+    return await kb.search_guideline(query, category, top_k=3)
+
+
+_TOOL_DISPATCH.update({
+    ("crm",     "lookup_customer"):          lookup_customer.func,
+    ("crm",     "get_ticket_history"):       get_ticket_history.func,
+    ("orders",  "check_order_status"):       check_order_status.func,
+    ("orders",  "process_refund"):           process_refund.func,
+    ("tickets", "create_ticket"):            create_ticket.func,
+    ("comms",   "send_reply"):               send_reply.func,
+    ("comms",   "escalate_to_human"):        escalate_to_human.func,
+    ("kb",      "search_knowledge_base"):    _kb_search,
+    ("kb",      "search_agent_guidelines"):  _kb_guidelines,
+})
