@@ -35,23 +35,26 @@ merge                         ← Sonnet: synthesise final_reply from all agent_
     ▼  (when --eval and ground truth available)
 eval                          ← Haiku: scores action / completeness / tone
     │
-    ├── (avg < min-score and retry_count < 1)
+    ├── (--improve and avg < min-score and retry_count < 1)
     │       ▼
     │   improve               ← Sonnet: proposes skill_edit / kb_entry /
     │       │                    agent_guideline / new_skill
     │       └──────────────────► fan_out  ← retry cycle: re-runs agents with updated skills
     │
-    ▼  (score ok or max retries)
+    ▼  (score ok, max retries, or --no-improve)
 [route_after_eval]
     │
-    ├── wait_for_human        ← interrupt() — pauses for human review of escalations
-    │                            resume: python pipeline.py --resume <id> --decision "approve"
+    ├── wait_for_human        ← interrupt() inside the node — pauses after writing to
+    │                            escalation_queue so the UI can list pending reviews
+    │                            UI:     http://localhost:5173
+    │                            Manual: python pipeline.py --resume <id> --decision "approve"
     ▼  (not escalated)
 END
     │
     ▼
 Postgres (skills + knowledge_base + agent_guidelines + training_set +
-          pipeline_runs + pipeline_results + LangGraph checkpoint tables)
+          pipeline_runs + pipeline_results + escalation_queue +
+          LangGraph checkpoint tables)
 ```
 
 ### Specialist agent sub-graph (one per queue)
@@ -82,6 +85,7 @@ START → agent → [tool calls?] → tools → agent (loop)
 | Cycle in main graph (improve → fan_out retry) | `graph.py`, `routing.py` — `route_after_eval` |
 | `interrupt()` for human-in-the-loop | `nodes.py` — `wait_for_human_node` |
 | `AsyncPostgresSaver` checkpointer | `checkpointer.py` |
+| `escalation_queue` table as async handoff | `store.py` — UI writes decisions; pipeline resumes |
 
 ## Setup
 
@@ -117,13 +121,28 @@ The database schema (tables, HNSW indexes, LangGraph checkpoint tables) is creat
 python pipeline.py --limit 3
 ```
 
+**5. (Optional) Run the escalation review UI**
+
+```bash
+# Terminal 1 — pipeline in serve mode: processes emails then keeps polling for human decisions
+python pipeline.py --limit 3 --serve
+
+# Terminal 2 — FastAPI backend (port 8001)
+cd ui/backend && uvicorn main:app --port 8001 --reload
+
+# Terminal 3 — React frontend (port 5173)
+cd ui/frontend && npm install && npm run dev
+```
+
+Open http://localhost:5173 to review and approve or override escalated tickets.
+
 ## Pipeline flags
 
 ```
 python pipeline.py [options]
 
 Core
-  --limit N           emails to process (default: 3)
+  --limit N           emails to process (default: 3); use 0 for serve-only mode
   --offset N          skip first N emails (default: 0)
   --language LANG     filter by language: en | de (default: en)
   --shuffle           randomise email order
@@ -141,7 +160,11 @@ Improve  (default: on, requires --eval)
   --apply / --no-apply     apply proposals to DB immediately (default: on)
   --min-score FLOAT        avg score threshold to trigger improve (default: 4.5)
 
-Human-in-the-loop resume
+Serve  (default: on)
+  --serve / --no-serve     after the email loop, keep running and poll escalation_queue
+                           every 5 s; auto-resumes interrupted threads when humans decide
+
+Human-in-the-loop (manual)
   --resume THREAD_ID   resume a pipeline paused by an escalation interrupt
   --decision TEXT      human decision: "approve" or "override: <guidance>"
 ```
@@ -158,7 +181,13 @@ python pipeline.py --no-improve --limit 20
 # Full cycle — eval + improve + apply to DB
 python pipeline.py --limit 10
 
-# Resume an escalated ticket after human review
+# Process emails then stay running to auto-resume escalations via UI
+python pipeline.py --limit 3 --serve
+
+# Serve-only: no new emails, just poll and resume pending escalations
+python pipeline.py --limit 0 --serve
+
+# Manual resume of an escalated ticket (without --serve)
 python pipeline.py --resume email-42-3 --decision "approve"
 python pipeline.py --resume email-42-3 --decision "override: Please process the refund without waiting for verification"
 ```
@@ -194,13 +223,13 @@ Same as `agent-cli` and `agent-mcp` — after each email is scored, if the avera
 
 ```
 agent-langgraph/
-├── pipeline.py               # entry point: --limit, --eval, --improve, --resume, --decision
+├── pipeline.py               # entry point: --limit, --eval, --improve, --serve, --resume
 ├── graph.py                  # main StateGraph — assembles all nodes and edges
 ├── state.py                  # PipelineState + AgentState TypedDicts with reducers
 ├── nodes.py                  # node functions: screen, classify, decompose, fan_out,
 │                             #   wait_for_human, merge, eval, improve, wrap_agent_result
-├── routing.py                # conditional edge functions: route_screen, route_escalation,
-│                             #   route_eval, route_improve
+├── routing.py                # conditional edge functions: route_screen, route_after_merge,
+│                             #   route_after_eval
 ├── tools.py                  # @tool decorated functions (ToolNode / in-process execution)
 │                             #   replaces cli.py (subprocess) and mcp_server.py (HTTP)
 ├── checkpointer.py           # AsyncPostgresSaver for interrupt() state persistence
@@ -210,6 +239,20 @@ agent-langgraph/
 │   ├── technical.py          # compiled technical_support sub-graph
 │   ├── returns.py            # compiled returns sub-graph
 │   └── general.py            # compiled general sub-graph
+├── ui/
+│   ├── backend/
+│   │   ├── main.py           # FastAPI server (port 8001): GET /api/escalations,
+│   │   │                     #   POST /api/escalations/{id}/decide → writes to escalation_queue
+│   │   └── requirements.txt  # fastapi, uvicorn
+│   └── frontend/             # React 18 + Vite 5 + TypeScript
+│       ├── src/
+│       │   ├── App.tsx        # polls /api/escalations every 5 s
+│       │   ├── components/
+│       │   │   ├── EscalationCard.tsx   # expandable card with Approve / Override buttons
+│       │   │   ├── DecisionModal.tsx    # override text modal
+│       │   │   └── ResolvedList.tsx     # collapsible history
+│       │   └── types.ts       # Escalation TypeScript interface
+│       └── vite.config.ts     # proxies /api → http://localhost:8001
 ├── # Copied from agent-cli (identical — no framework dependency):
 ├── classifier.py, client.py, email_stream.py, email_sanitizer.py
 ├── input_screener.py, evaluator.py, improver.py
@@ -243,7 +286,7 @@ You are a refund specialist...
 | Orchestration | `asyncio.gather` | `asyncio.gather` | `StateGraph` + Send API |
 | Routing | Python if/elif | Python if/elif | conditional edges |
 | Reflection | none | none | critic node loop |
-| Human-in-the-loop | none | none | `interrupt()` |
+| Human-in-the-loop | none | none | `interrupt()` + escalation review UI |
 | State management | dataclasses | dataclasses | `TypedDict` + reducers |
 | Graph visualisation | none | none | `draw_mermaid()` |
 | Checkpointing | none | none | `AsyncPostgresSaver` |
