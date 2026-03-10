@@ -56,6 +56,13 @@ contain agent-perspective phrases ("request their", "ask the customer", "you mus
 If the answer describes what the agent should do — not just facts to relay to the customer
 — use agent_guideline instead.
 
+**Never propose a kb_entry for transient or time-sensitive information**: outage
+notifications, current system status, "we are currently experiencing / aware of",
+maintenance windows, or any content that describes a temporary state and will become
+false once the condition resolves. Outage handling is a workflow behaviour — use
+skill_edit to fix how the agent detects and responds to outages, not kb_entry to store
+a snapshot of a specific outage's status.
+
 ### skill_edit — wrong workflow or action
 Propose a skill_edit when the eval comment identifies a process error in the skill's
 workflow: wrong action taken, wrong tool used, wrong order of steps, or a decision
