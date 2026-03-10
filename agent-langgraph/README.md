@@ -84,8 +84,11 @@ START → agent → [tool calls?] → tools → agent (loop)
 | Reflection loop (agent → critic → agent) | `agents/base_agent.py` |
 | Cycle in main graph (improve → fan_out retry) | `graph.py`, `routing.py` — `route_after_eval` |
 | `interrupt()` for human-in-the-loop | `nodes.py` — `wait_for_human_node` |
-| `AsyncPostgresSaver` checkpointer | `checkpointer.py` |
+| `AsyncPostgresSaver` checkpointer | `checkpointer.py` — HITL persistence + chat memory |
 | `escalation_queue` table as async handoff | `store.py` — UI writes decisions; pipeline resumes |
+| `create_react_agent` (prebuilt) | `agents/kb_chat.py` — contrast to custom `StateGraph` |
+| `astream_events()` token streaming | `ui/backend/main.py` — SSE chat endpoint |
+| `MessagesState` (prebuilt) | implicit in `create_react_agent` |
 
 ## Setup
 
@@ -121,20 +124,22 @@ The database schema (tables, HNSW indexes, LangGraph checkpoint tables) is creat
 python pipeline.py --limit 3
 ```
 
-**5. (Optional) Run the escalation review UI**
+**5. (Optional) Run the UI**
 
 ```bash
 # Terminal 1 — pipeline in serve mode: processes emails then keeps polling for human decisions
 python pipeline.py --limit 3 --serve
 
 # Terminal 2 — FastAPI backend (port 8001)
-cd ui/backend && uvicorn main:app --port 8001 --reload
+uvicorn ui.backend.main:app --port 8001 --reload
 
 # Terminal 3 — React frontend (port 5173)
 cd ui/frontend && npm install && npm run dev
 ```
 
-Open http://localhost:5173 to review and approve or override escalated tickets.
+Open http://localhost:5173:
+- **Escalation review tab** — approve or override escalated tickets; polls every 5 s
+- **KB chat tab** — streaming chat backed by `create_react_agent` + `astream_events()`; conversation history persists per browser tab via the checkpointer
 
 ## Pipeline flags
 
@@ -251,11 +256,12 @@ agent-langgraph/
 │   ├── billing.py            # compiled billing sub-graph
 │   ├── technical.py          # compiled technical_support sub-graph
 │   ├── returns.py            # compiled returns sub-graph
-│   └── general.py            # compiled general sub-graph
+│   ├── general.py            # compiled general sub-graph
+│   └── kb_chat.py            # create_react_agent + astream_events() streaming chat
 ├── ui/
 │   ├── backend/
-│   │   ├── main.py           # FastAPI server (port 8001): GET /api/escalations,
-│   │   │                     #   POST /api/escalations/{id}/decide → writes to escalation_queue
+│   │   ├── main.py           # FastAPI server (port 8001): escalation endpoints +
+│   │   │                     #   GET/DELETE /api/chat/history/{id}, POST /api/chat/stream
 │   │   └── requirements.txt  # fastapi, uvicorn
 │   ├── export_showcase.py    # queries DB → writes self-contained ui/showcase/index.html
 │   ├── showcase/
@@ -264,6 +270,7 @@ agent-langgraph/
 │       ├── src/
 │       │   ├── App.tsx        # polls /api/escalations every 5 s
 │       │   ├── components/
+│       │   │   ├── Chat.tsx             # streaming KB chat (SSE reader, sessionStorage thread_id)
 │       │   │   ├── EscalationCard.tsx   # expandable card with Approve / Override buttons
 │       │   │   ├── DecisionModal.tsx    # override text modal
 │       │   │   └── ResolvedList.tsx     # collapsible history
@@ -306,3 +313,5 @@ You are a refund specialist...
 | State management | dataclasses | dataclasses | `TypedDict` + reducers |
 | Graph visualisation | none | none | `draw_mermaid()` |
 | Checkpointing | none | none | `AsyncPostgresSaver` |
+| Prebuilt agent | none | none | `create_react_agent` KB chat |
+| Token streaming | none | none | `astream_events()` SSE |
