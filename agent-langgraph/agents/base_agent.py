@@ -19,10 +19,9 @@ and exits.
 """
 
 import json
-from pathlib import Path
 
 from langchain_anthropic import ChatAnthropic
-from langchain_core.messages import HumanMessage, SystemMessage
+from langchain_core.messages import AIMessage, HumanMessage, SystemMessage, ToolMessage
 from langgraph.graph import END, START, StateGraph
 from langgraph.graph.state import CompiledStateGraph
 from langgraph.prebuilt import ToolNode
@@ -30,7 +29,7 @@ from langgraph.prebuilt import ToolNode
 from client import track_langchain_usage
 from logger import get_logger
 from state import AgentResult, AgentState
-from tools import ALL_TOOLS, TOOLS_BY_NAME
+from tools import ALL_TOOLS
 
 log = get_logger(__name__)
 
@@ -262,8 +261,6 @@ def _extract_tool_state(messages: list) -> dict:
     }
 
     # ToolNode appends ToolMessage objects; find the most recent batch
-    from langchain_core.messages import AIMessage, ToolMessage
-
     # Find the AIMessage that triggered these tools (second-to-last group)
     ai_msg = None
     tool_msgs = []

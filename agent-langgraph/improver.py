@@ -7,12 +7,10 @@ Public API:
   apply_proposals(client, all_proposals)
 """
 
-import asyncio
 import json
 import yaml
 
 from client import Client
-from evaluator import judge
 from logger import get_logger
 import store as kb
 import skills as skills_db
