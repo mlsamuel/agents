@@ -3,8 +3,12 @@ import { Escalation } from "./types";
 import EscalationCard from "./components/EscalationCard";
 import DecisionModal from "./components/DecisionModal";
 import ResolvedList from "./components/ResolvedList";
+import Chat from "./components/Chat";
+
+type Tab = "escalations" | "chat";
 
 export default function App() {
+  const [tab, setTab] = useState<Tab>("escalations");
   const [escalations, setEscalations] = useState<Escalation[]>([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
@@ -67,47 +71,66 @@ export default function App() {
     <div className="app">
       <header className="app-header">
         <div className="header-left">
-          <h1>Escalation Review</h1>
-          <span className="header-sub">
-            {pending.length} pending · {resolved.length} resolved
-          </span>
+          <h1>Agent Dashboard</h1>
+          <span className="header-sub">LangGraph pipeline · HITL review · KB chat</span>
         </div>
+        <nav className="tabs">
+          <button
+            className={`tab-btn${tab === "escalations" ? " tab-btn-active" : ""}`}
+            onClick={() => setTab("escalations")}
+          >
+            Escalation review
+            {pending.length > 0 && <span className="tab-badge">{pending.length}</span>}
+          </button>
+          <button
+            className={`tab-btn${tab === "chat" ? " tab-btn-active" : ""}`}
+            onClick={() => setTab("chat")}
+          >
+            KB chat
+          </button>
+        </nav>
       </header>
 
-      <main className="app-main">
-        {error && <div className="error-banner">{error}</div>}
+      {tab === "escalations" ? (
+        <main className="app-main">
+          {error && <div className="error-banner">{error}</div>}
 
-        {loading ? (
-          <div className="loading">Loading…</div>
-        ) : pending.length === 0 && resolved.length === 0 ? (
-          <div className="empty-state">
-            No escalations yet.
-            <br />
-            <code>python pipeline.py --limit 1</code>
-          </div>
-        ) : (
-          <>
-            {pending.length > 0 && (
-              <>
-                <div className="section-heading">Pending review ({pending.length})</div>
-                {pending.map((e) => (
-                  <EscalationCard
-                    key={e.thread_id}
-                    escalation={e}
-                    submitting={submitting === e.thread_id}
-                    onApprove={() => handleDecide(e.thread_id, "approve")}
-                    onOverride={() => setModalThread(e)}
-                  />
-                ))}
-              </>
-            )}
+          {loading ? (
+            <div className="loading">Loading…</div>
+          ) : pending.length === 0 && resolved.length === 0 ? (
+            <div className="empty-state">
+              No escalations yet.
+              <br />
+              <code>python pipeline.py --limit 1</code>
+            </div>
+          ) : (
+            <>
+              {pending.length > 0 && (
+                <>
+                  <div className="section-heading">Pending review ({pending.length})</div>
+                  {pending.map((e) => (
+                    <EscalationCard
+                      key={e.thread_id}
+                      escalation={e}
+                      submitting={submitting === e.thread_id}
+                      onApprove={() => handleDecide(e.thread_id, "approve")}
+                      onOverride={() => setModalThread(e)}
+                    />
+                  ))}
+                </>
+              )}
 
-            {resolved.length > 0 && (
-              <ResolvedList escalations={resolved} />
-            )}
-          </>
-        )}
-      </main>
+              {resolved.length > 0 && (
+                <ResolvedList escalations={resolved} />
+              )}
+            </>
+          )}
+        </main>
+      ) : (
+        <main className="app-main app-main-chat">
+          <Chat />
+        </main>
+      )}
 
       {modalThread && (
         <DecisionModal
