@@ -15,27 +15,31 @@ def setup_tracing() -> trace.Tracer:
     if _tracer is not None:
         return _tracer
 
-    resource = Resource({
-        "service.name": "agent-azure-kb",
-        "service.version": "1.0.0",
-    })
-    provider = TracerProvider(resource=resource)
-
-    # Always export to console so spans are visible during demos
-    provider.add_span_processor(SimpleSpanProcessor(ConsoleSpanExporter()))
-
-    # If Application Insights connection string is set, also export to Azure Monitor
     conn_str = os.environ.get("APPLICATIONINSIGHTS_CONNECTION_STRING")
-    if conn_str:
-        try:
-            from azure.monitor.opentelemetry.exporter import AzureMonitorTraceExporter
-            azure_exporter = AzureMonitorTraceExporter(connection_string=conn_str)
-            provider.add_span_processor(SimpleSpanProcessor(azure_exporter))
-            logger.info("Azure Monitor tracing enabled")
-        except ImportError:
-            logger.warning("azure-monitor-opentelemetry not installed; skipping Azure Monitor export")
 
-    trace.set_tracer_provider(provider)
+    if conn_str:
+        # configure_azure_monitor sets up traces + logs + metrics in one call,
+        # routing all three signals to Application Insights. Python's logging
+        # module is automatically bridged to OpenTelemetry Logs.
+        from azure.monitor.opentelemetry import configure_azure_monitor
+        configure_azure_monitor(
+            connection_string=conn_str,
+            resource=Resource({
+                "service.name": "agent-azure-kb",
+                "service.version": "1.0.0",
+            }),
+        )
+        logger.info("Azure Monitor telemetry enabled (traces + logs → Application Insights)")
+    else:
+        # No Azure Monitor — export traces to console only
+        resource = Resource({
+            "service.name": "agent-azure-kb",
+            "service.version": "1.0.0",
+        })
+        provider = TracerProvider(resource=resource)
+        provider.add_span_processor(SimpleSpanProcessor(ConsoleSpanExporter()))
+        trace.set_tracer_provider(provider)
+
     _tracer = trace.get_tracer("agent-azure.kb-agent")
     return _tracer
 
