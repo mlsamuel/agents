@@ -14,26 +14,22 @@ from azure.identity import DefaultAzureCredential
 
 load_dotenv()
 
-DATA_DIR = pathlib.Path(__file__).parent.parent / "agent-langgraph" / "data"
+DATA_DIR = pathlib.Path(__file__).parent / "data"
 KB_FILE = DATA_DIR / "knowledge_base.json"
-GUIDELINES_FILE = DATA_DIR / "agent_guidelines.json"
 
 
 def build_markdown() -> str:
-    """Convert KB JSON files to a single structured markdown document."""
-    lines: list[str] = []
-
-    lines.append("# Customer Support Knowledge Base\n")
+    """Convert knowledge_base.json to a structured markdown document."""
+    from collections import defaultdict
 
     with open(KB_FILE) as f:
         kb_entries: list[dict] = json.load(f)
 
-    # Group by category
-    from collections import defaultdict
     by_category: dict[str, list[dict]] = defaultdict(list)
     for entry in kb_entries:
         by_category[entry["category"].title()].append(entry)
 
+    lines: list[str] = ["# Customer Support Knowledge Base\n"]
     for category, entries in sorted(by_category.items()):
         lines.append(f"\n## {category}\n")
         for entry in entries:
@@ -42,17 +38,6 @@ def build_markdown() -> str:
             lines.append(f"**A:** {entry['answer']}")
             if entry.get("keywords"):
                 lines.append(f"*Keywords: {', '.join(entry['keywords'])}*")
-            lines.append("")
-
-    if GUIDELINES_FILE.exists():
-        with open(GUIDELINES_FILE) as f:
-            guidelines: list[dict] = json.load(f)
-
-        lines.append("\n# Agent Guidelines\n")
-        for g in guidelines:
-            lines.append(f"### {g['topic']} ({g['category']})")
-            lines.append(f"**Trigger:** {g['trigger']}")
-            lines.append(f"**Instruction:** {g['instruction']}")
             lines.append("")
 
     return "\n".join(lines)
