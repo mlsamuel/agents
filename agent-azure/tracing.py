@@ -4,6 +4,7 @@ from opentelemetry import trace
 from opentelemetry.sdk.resources import Resource
 from opentelemetry.sdk.trace import TracerProvider
 from opentelemetry.sdk.trace.export import SimpleSpanProcessor, ConsoleSpanExporter
+
 logger = logging.getLogger(__name__)
 
 _tracer: trace.Tracer | None = None
