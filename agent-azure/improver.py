@@ -234,92 +234,99 @@ def _merge_guideline_entries(client: AgentsClient, existing: dict, proposed: dic
     return merged
 
 
+_KB_PATH = Path(__file__).parent / "data" / "knowledge_base.json"
+
+
+def _apply_skill(p: dict) -> None:
+    """Write a skill_edit or new_skill proposal to disk."""
+    meta, _ = skills_mod.parse_frontmatter(p["new_content"])
+    agent_key  = meta.get("agent", "general")
+    skill_name = meta.get("name", "unknown")
+    skills_dir = Path(__file__).parent / "data" / "skills" / agent_key
+    skills_dir.mkdir(parents=True, exist_ok=True)
+    skill_path = skills_dir / f"{skill_name}.md"
+
+    if p["type"] == "skill_edit" and skill_path.exists():
+        new_ver = skills_mod.upsert_version(str(skill_path), p["new_content"])
+        print(f"  Skill updated: {skill_name} → v{new_ver}")
+    else:
+        skill_path.write_text(p["new_content"], encoding="utf-8")
+        print(f"  New skill created: {skill_name}")
+
+
+def _apply_kb_entry(client: AgentsClient, p: dict, vector_store_id: str) -> None:
+    """Add or merge a kb_entry and re-upload the affected category to the vector store."""
+    from kb_setup import update_kb_category  # avoid circular import at module level
+
+    entry = p["entry"]
+    kb_entries: list[dict] = json.loads(_KB_PATH.read_text(encoding="utf-8"))
+
+    existing = next(
+        (e for e in kb_entries if e.get("topic", "").lower() == entry.get("topic", "").lower()),
+        None,
+    )
+    if existing:
+        print(f"  KB merge: '{entry.get('topic')}' ~ '{existing['topic']}'")
+        merged = _merge_kb_entries(client, existing, entry)
+        existing.update(merged)
+        print(f"  KB entry merged: {merged.get('topic', '')}")
+    else:
+        entry["id"] = max((e.get("id", 0) for e in kb_entries), default=0) + 1
+        kb_entries.append(entry)
+        print(f"  KB entry added: id={entry['id']} — {entry.get('topic', '')}")
+
+    _KB_PATH.write_text(json.dumps(kb_entries, indent=2, ensure_ascii=False), encoding="utf-8")
+    try:
+        update_kb_category(vector_store_id, entry.get("category", ""))
+        print(f"  KB re-uploaded to vector store ({entry.get('category', 'unknown')} category)")
+    except Exception as exc:
+        print(f"  KB upload failed: {exc}")
+
+
+def _apply_guideline(client: AgentsClient, p: dict, vector_store_id: str) -> None:
+    """Add or merge an agent_guideline and re-upload guidelines to the vector store."""
+    from kb_setup import update_guidelines  # avoid circular import at module level
+
+    entry = p["entry"]
+    guidelines = store.load_guidelines()
+
+    existing = next(
+        (g for g in guidelines if g.get("topic", "").lower() == entry.get("topic", "").lower()),
+        None,
+    )
+    if existing:
+        print(f"  Guideline merge: '{entry.get('topic')}' ~ '{existing['topic']}'")
+        merged = _merge_guideline_entries(client, existing, entry)
+        existing.update(merged)
+        store.save_guidelines(guidelines)
+        print(f"  Guideline merged: {merged.get('topic', '')}")
+    else:
+        store.add_guideline(entry)
+        print(f"  Guideline added: {entry.get('topic', '')}")
+
+    try:
+        update_guidelines(vector_store_id)
+        print(f"  Guidelines re-uploaded to vector store")
+    except Exception as exc:
+        print(f"  Guidelines upload failed: {exc}")
+
+
 def apply_proposals(
     client: AgentsClient,
     proposals: list[dict],
     vector_store_id: str,
 ) -> None:
     """Apply improvement proposals to skills, KB, and guidelines."""
-    from kb_setup import update_guidelines, update_kb_category  # import here to avoid circular deps
-
-    kb_path = Path(__file__).parent / "data" / "knowledge_base.json"
-
     for p in proposals:
         ptype = p["type"]
         log.debug("apply_proposal → type=%s rationale=%s", ptype, p.get("rationale", "")[:80])
 
-        if ptype in ("skill_edit", "new_skill"):
-            meta, body = skills_mod.parse_frontmatter(p["new_content"])
-            agent_key = meta.get("agent", "general")
-            skill_name = meta.get("name", "unknown")
-            skills_dir = Path(__file__).parent / "data" / "skills" / agent_key
-            skills_dir.mkdir(parents=True, exist_ok=True)
-            skill_path = skills_dir / f"{skill_name}.md"
-
-            if ptype == "skill_edit" and skill_path.exists():
-                new_ver = skills_mod.upsert_version(str(skill_path), p["new_content"])
-                print(f"  Skill updated: {skill_name} → v{new_ver}")
-            else:
-                skill_path.write_text(p["new_content"], encoding="utf-8")
-                print(f"  New skill created: {skill_name}")
-
-        elif ptype == "kb_entry":
-            entry = p["entry"]
-            # Load existing KB
-            kb_entries: list[dict] = json.loads(kb_path.read_text(encoding="utf-8"))
-
-            # Topic-based dedup: merge if same topic exists
-            existing = next(
-                (e for e in kb_entries if e.get("topic", "").lower() == entry.get("topic", "").lower()),
-                None,
-            )
-            if existing:
-                print(f"  KB merge: '{entry.get('topic')}' ~ '{existing['topic']}'")
-                try:
-                    merged = _merge_kb_entries(client, existing, entry)
-                    existing.update(merged)
-                    print(f"  KB entry merged: {merged.get('topic', '')}")
-                except Exception as exc:
-                    print(f"  KB merge failed: {exc} — skipping")
-                    continue
-            else:
-                new_id = max((e.get("id", 0) for e in kb_entries), default=0) + 1
-                entry["id"] = new_id
-                kb_entries.append(entry)
-                print(f"  KB entry added: id={new_id} — {entry.get('topic', '')}")
-
-            # Save and re-upload only the affected category
-            kb_path.write_text(json.dumps(kb_entries, indent=2, ensure_ascii=False), encoding="utf-8")
-            try:
-                update_kb_category(vector_store_id, entry.get("category", ""))
-                print(f"  KB re-uploaded to vector store ({entry.get('category', 'unknown')} category)")
-            except Exception as exc:
-                print(f"  KB upload failed: {exc}")
-
-        elif ptype == "agent_guideline":
-            entry = p["entry"]
-            guidelines = store.load_guidelines()
-
-            # Topic-based dedup
-            existing = next(
-                (g for g in guidelines if g.get("topic", "").lower() == entry.get("topic", "").lower()),
-                None,
-            )
-            if existing:
-                print(f"  Guideline merge: '{entry.get('topic')}' ~ '{existing['topic']}'")
-                try:
-                    merged = _merge_guideline_entries(client, existing, entry)
-                    existing.update(merged)
-                    store.save_guidelines(guidelines)
-                    print(f"  Guideline merged: {merged.get('topic', '')}")
-                except Exception as exc:
-                    print(f"  Guideline merge failed: {exc} — skipping")
-                    continue
-            else:
-                store.add_guideline(entry)
-                print(f"  Guideline added: {entry.get('topic', '')}")
-            try:
-                update_guidelines(vector_store_id)
-                print(f"  Guidelines re-uploaded to vector store")
-            except Exception as exc:
-                print(f"  Guidelines upload failed: {exc}")
+        try:
+            if ptype in ("skill_edit", "new_skill"):
+                _apply_skill(p)
+            elif ptype == "kb_entry":
+                _apply_kb_entry(client, p, vector_store_id)
+            elif ptype == "agent_guideline":
+                _apply_guideline(client, p, vector_store_id)
+        except Exception as exc:
+            print(f"  apply {ptype} failed: {exc} — skipping")

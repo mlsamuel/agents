@@ -117,15 +117,8 @@ def create_specialist(
     return agent, thread
 
 
-def run_specialist(
-    client: AgentsClient,
-    agent,
-    thread,
-    email: dict,
-    classification: dict,
-) -> SpecialistResult:
-    """Send an email to a specialist agent and return the result."""
-    agent_key = agent.name.replace("-specialist", "")
+def _send_and_run(client, agent, thread, email: dict, classification: dict):
+    """Post the user message and execute the agent run. Returns the completed run object."""
     subject = email.get("subject") or "(no subject)"
     body = (email.get("body") or "")[:1500]
 
@@ -139,7 +132,6 @@ def run_specialist(
         f"type={classification.get('type')}\n\n"
         f"Handle this email according to your workflow."
     )
-
     client.messages.create(thread_id=thread.id, role="user", content=user_msg)
 
     # create_and_process handles the tool-call loop automatically because
@@ -149,17 +141,19 @@ def run_specialist(
     if run.status == "incomplete":
         reason = getattr(getattr(run, "incomplete_details", None), "reason", "unknown")
         if reason != "content_filter":
-            raise RuntimeError(
-                f"Specialist run failed: status={run.status}, reason={reason}"
-            )
-        # content_filter: fall through with empty reply; fallback applied below
+            raise RuntimeError(f"Specialist run failed: status={run.status}, reason={reason}")
+        # content_filter: fall through with empty reply; fallback applied in _extract_reply
     elif run.status != "completed":
         raise RuntimeError(
             f"Specialist run failed: status={run.status}, "
             f"error={getattr(run, 'last_error', None)}"
         )
 
-    # Extract reply
+    return run
+
+
+def _extract_reply(client, thread, run) -> str:
+    """Extract the assistant's reply text from the thread messages."""
     reply = ""
     if run.status == "completed":
         for msg in client.messages.list(thread_id=thread.id):
@@ -178,84 +172,100 @@ def run_specialist(
             "Thank you for contacting us. We have received your request and a "
             "support agent will follow up with you shortly."
         )
+    return reply
 
-    # Extract ticket_id from reply text (skill instructions require it there)
-    m = _TICKET_RE.search(reply)
-    ticket_id = m.group(0) if m else None
 
-    # Extract tools_called, escalated, file_search hits, and step trace from run steps.
-    # run_steps.list returns most-recent-first; reverse for chronological order.
+def _parse_steps(client, thread, run) -> tuple[list[str], list[str], list[dict], bool]:
+    """Parse run steps into (tools_called, files_searched, steps_log, escalated).
+
+    run_steps.list returns most-recent-first; reverse for chronological order.
+    """
     tools_called: list[str] = []
     files_searched: list[str] = []
     steps_log: list[dict] = []
     escalated = False
+
     raw_steps = list(client.run_steps.list(thread_id=thread.id, run_id=run.id))
     for step_num, step in enumerate(reversed(raw_steps), start=1):
-        if step.type == "tool_calls" and step.step_details:
-            for tc in step.step_details.tool_calls:
-                if hasattr(tc, "function"):
-                    name = tc.function.name
-                    tools_called.append(name)
-                    if name == "escalate_to_human":
-                        escalated = True
-                    steps_log.append({
-                        "step": step_num,
-                        "type": "function",
-                        "name": name,
-                        "args": tc.function.arguments,
-                    })
-                elif tc.type == "code_interpreter":
-                    tools_called.append("code_interpreter")
-                    ci = getattr(tc, "code_interpreter", None)
-                    code = getattr(ci, "input", "") if ci else ""
-                    outputs = getattr(ci, "outputs", []) if ci else []
-                    # Collect all outputs regardless of type; surface type name for unknown types
-                    out_parts = []
-                    for o in outputs:
-                        otype = getattr(o, "type", "unknown")
-                        if otype == "logs":
-                            text = getattr(o, "logs", "")
-                        else:
-                            # Fallback: try common attribute names, then repr
-                            text = (getattr(o, "logs", None)
-                                    or getattr(o, "text", None)
-                                    or f"[{otype} output — no text attribute]")
-                        if text:
-                            out_parts.append(text)
-                    stdout = "\n".join(out_parts)
-                    steps_log.append({
-                        "step": step_num,
-                        "type": "code_interpreter",
-                        "code": code,
-                        "output": stdout,
-                        "output_count": len(outputs),
-                    })
-                elif tc.type == "file_search" and hasattr(tc, "file_search"):
-                    results = getattr(tc.file_search, "results", None) or []
-                    fnames = []
-                    for r in results:
-                        fname = getattr(r, "file_name", None)
-                        if fname and fname not in files_searched:
-                            files_searched.append(fname)
-                        if fname and fname not in fnames:
-                            fnames.append(fname)
-                    steps_log.append({
-                        "step": step_num,
-                        "type": "file_search",
-                        "files": fnames,
-                    })
+        if step.type != "tool_calls" or not step.step_details:
+            continue
+        for tc in step.step_details.tool_calls:
+            if hasattr(tc, "function"):
+                name = tc.function.name
+                tools_called.append(name)
+                if name == "escalate_to_human":
+                    escalated = True
+                steps_log.append({
+                    "step": step_num,
+                    "type": "function",
+                    "name": name,
+                    "args": tc.function.arguments,
+                })
+            elif tc.type == "code_interpreter":
+                tools_called.append("code_interpreter")
+                ci = getattr(tc, "code_interpreter", None)
+                code = getattr(ci, "input", "") if ci else ""
+                outputs = getattr(ci, "outputs", []) if ci else []
+                out_parts = []
+                for o in outputs:
+                    otype = getattr(o, "type", "unknown")
+                    if otype == "logs":
+                        text = getattr(o, "logs", "")
+                    else:
+                        text = (getattr(o, "logs", None)
+                                or getattr(o, "text", None)
+                                or f"[{otype} output — no text attribute]")
+                    if text:
+                        out_parts.append(text)
+                steps_log.append({
+                    "step": step_num,
+                    "type": "code_interpreter",
+                    "code": code,
+                    "output": "\n".join(out_parts),
+                    "output_count": len(outputs),
+                })
+            elif tc.type == "file_search" and hasattr(tc, "file_search"):
+                results = getattr(tc.file_search, "results", None) or []
+                fnames = []
+                for r in results:
+                    fname = getattr(r, "file_name", None)
+                    if fname and fname not in files_searched:
+                        files_searched.append(fname)
+                    if fname and fname not in fnames:
+                        fnames.append(fname)
+                steps_log.append({
+                    "step": step_num,
+                    "type": "file_search",
+                    "files": fnames,
+                })
 
-    internal_summary = reply.split(".")[0].strip() if reply else ""
+    return tools_called, files_searched, steps_log, escalated
 
+
+def run_specialist(
+    client: AgentsClient,
+    agent,
+    thread,
+    email: dict,
+    classification: dict,
+) -> SpecialistResult:
+    """Send an email to a specialist agent and return the result."""
+    agent_key = agent.name.replace("-specialist", "")
+
+    run = _send_and_run(client, agent, thread, email, classification)
+    reply = _extract_reply(client, thread, run)
+    tools_called, files_searched, steps_log, escalated = _parse_steps(client, thread, run)
+
+    m = _TICKET_RE.search(reply)
     return SpecialistResult(
         agent_key=agent_key,
         skill_name=agent.name,
         reply=reply,
-        ticket_id=ticket_id,
+        ticket_id=m.group(0) if m else None,
         escalated=escalated,
         tools_called=tools_called,
         files_searched=files_searched,
-        internal_summary=internal_summary,
+        internal_summary=reply.split(".")[0].strip(),
         steps_log=steps_log,
     )
 
