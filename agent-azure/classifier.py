@@ -49,26 +49,26 @@ def classify(client: AgentsClient, email: dict) -> dict:
     subject = email.get("subject") or "(no subject)"
     body = (email.get("body") or "")[:1500]
 
-    agent = client.agents.create_agent(
+    agent = client.create_agent(
         model=MODEL,
         name="email-classifier",
         instructions=SYSTEM_PROMPT,
     )
-    thread = client.agents.threads.create()
+    thread = client.threads.create()
     try:
-        client.agents.messages.create(
+        client.messages.create(
             thread_id=thread.id,
             role="user",
             content=f"Subject: {subject}\n\nBody:\n{body}",
         )
-        run = client.agents.runs.create_and_process(
+        run = client.runs.create_and_process(
             thread_id=thread.id,
             agent_id=agent.id,
         )
         if run.status != "completed":
             raise RuntimeError(f"Classifier run failed: {run.status}")
 
-        messages = client.agents.messages.list(thread_id=thread.id)
+        messages = client.messages.list(thread_id=thread.id)
         raw = ""
         for msg in messages:
             if msg.role == "assistant":
@@ -78,8 +78,8 @@ def classify(client: AgentsClient, email: dict) -> dict:
                         break
                 break
     finally:
-        client.agents.threads.delete(thread.id)
-        client.agents.delete_agent(agent.id)
+        client.threads.delete(thread.id)
+        client.delete_agent(agent.id)
 
     # Strip markdown fences if present
     if raw.startswith("```"):

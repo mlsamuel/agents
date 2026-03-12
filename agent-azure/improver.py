@@ -129,21 +129,21 @@ Respond with JSON only, no markdown:
 
 def _call_agent(client: AgentsClient, system: str, user_msg: str, model: str = IMPROVE_MODEL) -> str:
     """Create a single-turn Foundry agent call and return the text response."""
-    agent = client.agents.create_agent(model=model, name="improver", instructions=system)
-    thread = client.agents.threads.create()
+    agent = client.create_agent(model=model, name="improver", instructions=system)
+    thread = client.threads.create()
     try:
-        client.agents.messages.create(thread_id=thread.id, role="user", content=user_msg)
-        run = client.agents.runs.create_and_process(thread_id=thread.id, agent_id=agent.id)
+        client.messages.create(thread_id=thread.id, role="user", content=user_msg)
+        run = client.runs.create_and_process(thread_id=thread.id, agent_id=agent.id)
         if run.status != "completed":
             raise RuntimeError(f"Improver agent failed: {run.status}")
-        for msg in client.agents.messages.list(thread_id=thread.id):
+        for msg in client.messages.list(thread_id=thread.id):
             if msg.role == "assistant":
                 for part in msg.content:
                     if hasattr(part, "text"):
                         return part.text.value.strip()
     finally:
-        client.agents.threads.delete(thread.id)
-        client.agents.delete_agent(agent.id)
+        client.threads.delete(thread.id)
+        client.delete_agent(agent.id)
     return ""
 
 

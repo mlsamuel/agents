@@ -49,20 +49,20 @@ def judge(client: AgentsClient, email: dict, ground_truth: str, generated: str) 
         f"GENERATED REPLY\n{gen}"
     )
 
-    agent = client.agents.create_agent(
+    agent = client.create_agent(
         model=MODEL,
         name="eval-judge",
         instructions=JUDGE_SYSTEM,
     )
-    thread = client.agents.threads.create()
+    thread = client.threads.create()
     try:
-        client.agents.messages.create(thread_id=thread.id, role="user", content=user_msg)
-        run = client.agents.runs.create_and_process(thread_id=thread.id, agent_id=agent.id)
+        client.messages.create(thread_id=thread.id, role="user", content=user_msg)
+        run = client.runs.create_and_process(thread_id=thread.id, agent_id=agent.id)
         if run.status != "completed":
             raise RuntimeError(f"Judge run failed: {run.status}")
 
         raw = ""
-        for msg in client.agents.messages.list(thread_id=thread.id):
+        for msg in client.messages.list(thread_id=thread.id):
             if msg.role == "assistant":
                 for part in msg.content:
                     if hasattr(part, "text"):
@@ -70,8 +70,8 @@ def judge(client: AgentsClient, email: dict, ground_truth: str, generated: str) 
                         break
                 break
     finally:
-        client.agents.threads.delete(thread.id)
-        client.agents.delete_agent(agent.id)
+        client.threads.delete(thread.id)
+        client.delete_agent(agent.id)
 
     if raw.startswith("```"):
         raw = raw.split("```")[1].lstrip("json").strip()
