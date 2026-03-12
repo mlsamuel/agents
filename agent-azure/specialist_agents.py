@@ -26,13 +26,13 @@ Public API:
 
 import os
 import re
-import time
 from dataclasses import dataclass, field
 
 from azure.ai.agents import AgentsClient
 from azure.ai.agents.models import CodeInterpreterTool, FileSearchTool, FunctionTool, ToolSet
 from azure.core.credentials import TokenCredential
 
+from agent_utils import run_with_retry
 from logger import get_logger
 from tools import ALL_TOOLS
 
@@ -41,18 +41,6 @@ log = get_logger(__name__)
 MODEL = os.environ.get("MODEL_DEPLOYMENT_NAME", "gpt-4o")
 
 _TICKET_RE = re.compile(r"TKT-\d+")
-
-
-def _run_with_retry(client, thread_id, agent_id, attempts=3):
-    """Run create_and_process with retries on transient failures (e.g. timeouts)."""
-    for i in range(attempts):
-        try:
-            return client.runs.create_and_process(thread_id=thread_id, agent_id=agent_id)
-        except Exception as exc:
-            if i == attempts - 1:
-                raise
-            log.debug("create_and_process attempt %d failed (%s), retrying in %ds", i + 1, exc, 2 ** i)
-            time.sleep(2 ** i)
 
 
 @dataclass
@@ -136,7 +124,7 @@ def _send_and_run(client, agent, thread, email: dict, classification: dict):
 
     # create_and_process handles the tool-call loop automatically because
     # make_client registered our functions via enable_auto_function_calls.
-    run = _run_with_retry(client, thread.id, agent.id)
+    run = run_with_retry(client, thread.id, agent.id)
 
     if run.status == "incomplete":
         reason = getattr(getattr(run, "incomplete_details", None), "reason", "unknown")

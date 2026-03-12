@@ -11,12 +11,12 @@ Public API:
 
 import json
 import os
-import time
 from datetime import datetime
 from pathlib import Path
 
 from azure.ai.agents import AgentsClient
 
+from agent_utils import run_with_retry
 from logger import get_logger
 
 log = get_logger(__name__)
@@ -41,17 +41,6 @@ Return only valid JSON with keys: action, completeness, tone, comment
 comment should be one short sentence about the biggest gap (or "none" if all good)."""
 
 
-def _run_with_retry(client, thread_id, agent_id, attempts=3):
-    """Run create_and_process with retries on transient failures (e.g. timeouts)."""
-    for i in range(attempts):
-        try:
-            return client.runs.create_and_process(thread_id=thread_id, agent_id=agent_id)
-        except Exception as exc:
-            if i == attempts - 1:
-                raise
-            log.debug("evaluator attempt %d failed (%s), retrying in %ds", i + 1, exc, 2 ** i)
-            time.sleep(2 ** i)
-
 
 def judge(client: AgentsClient, email: dict, ground_truth: str, generated: str) -> dict:
     """Score the generated reply against the ground truth. Returns scores dict."""
@@ -74,7 +63,7 @@ def judge(client: AgentsClient, email: dict, ground_truth: str, generated: str) 
     thread = client.threads.create()
     try:
         client.messages.create(thread_id=thread.id, role="user", content=user_msg)
-        run = _run_with_retry(client, thread.id, agent.id)
+        run = run_with_retry(client, thread.id, agent.id)
         if run.status != "completed":
             raise RuntimeError(f"Judge run failed: {run.status}")
 

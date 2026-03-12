@@ -8,10 +8,10 @@ Public API:
 
 import json
 import os
-import time
 
 from azure.ai.agents import AgentsClient
 
+from agent_utils import run_with_retry
 from logger import get_logger
 
 log = get_logger(__name__)
@@ -49,18 +49,6 @@ _QUEUE_TO_AGENT: dict[str, str] = {
 }
 
 
-def _run_with_retry(client, thread_id, agent_id, attempts=3):
-    """Run create_and_process with retries on transient failures (e.g. timeouts)."""
-    for i in range(attempts):
-        try:
-            return client.runs.create_and_process(thread_id=thread_id, agent_id=agent_id)
-        except Exception as exc:
-            if i == attempts - 1:
-                raise
-            log.debug("classifier attempt %d failed (%s), retrying in %ds", i + 1, exc, 2 ** i)
-            time.sleep(2 ** i)
-
-
 def classify(client: AgentsClient, email: dict) -> dict:
     """Classify an email and return classification dict including agent_key."""
     subject = email.get("subject") or "(no subject)"
@@ -78,7 +66,7 @@ def classify(client: AgentsClient, email: dict) -> dict:
             role="user",
             content=f"Subject: {subject}\n\nBody:\n{body}",
         )
-        run = _run_with_retry(client, thread.id, agent.id)
+        run = run_with_retry(client, thread.id, agent.id)
         if run.status != "completed":
             raise RuntimeError(f"Classifier run failed: {run.status}")
 
