@@ -20,6 +20,7 @@ from azure.ai.agents import AgentsClient
 
 import skills as skills_mod
 import store
+from kb_setup import update_guidelines, update_kb_category
 from logger import get_logger
 
 log = get_logger(__name__)
@@ -256,8 +257,6 @@ def _apply_skill(p: dict) -> None:
 
 def _apply_kb_entry(client: AgentsClient, p: dict, vector_store_id: str) -> None:
     """Add or merge a kb_entry and re-upload the affected category to the vector store."""
-    from kb_setup import update_kb_category  # avoid circular import at module level
-
     entry = p["entry"]
     kb_entries: list[dict] = json.loads(_KB_PATH.read_text(encoding="utf-8"))
 
@@ -285,8 +284,6 @@ def _apply_kb_entry(client: AgentsClient, p: dict, vector_store_id: str) -> None
 
 def _apply_guideline(client: AgentsClient, p: dict, vector_store_id: str) -> None:
     """Add or merge an agent_guideline and re-upload guidelines to the vector store."""
-    from kb_setup import update_guidelines  # avoid circular import at module level
-
     entry = p["entry"]
     guidelines = store.load_guidelines()
 
