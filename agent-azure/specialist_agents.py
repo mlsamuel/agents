@@ -47,6 +47,7 @@ class SpecialistResult:
     ticket_id: str | None
     escalated: bool
     tools_called: list[str] = field(default_factory=list)
+    files_searched: list[str] = field(default_factory=list)
     internal_summary: str = ""
 
 
@@ -162,8 +163,9 @@ def run_specialist(
     m = _TICKET_RE.search(reply)
     ticket_id = m.group(0) if m else None
 
-    # Extract tools_called and escalated from run steps (names are available; output is not)
+    # Extract tools_called, escalated, and file_search hits from run steps
     tools_called: list[str] = []
+    files_searched: list[str] = []  # filenames retrieved via FileSearch
     escalated = False
     for step in client.run_steps.list(thread_id=thread.id, run_id=run.id):
         if step.type == "tool_calls" and step.step_details:
@@ -172,6 +174,12 @@ def run_specialist(
                     tools_called.append(tc.function.name)
                     if tc.function.name == "escalate_to_human":
                         escalated = True
+                elif tc.type == "file_search" and hasattr(tc, "file_search"):
+                    results = getattr(tc.file_search, "results", None) or []
+                    for r in results:
+                        fname = getattr(r, "file_name", None)
+                        if fname and fname not in files_searched:
+                            files_searched.append(fname)
 
     internal_summary = reply.split(".")[0].strip() if reply else ""
 
@@ -182,6 +190,7 @@ def run_specialist(
         ticket_id=ticket_id,
         escalated=escalated,
         tools_called=tools_called,
+        files_searched=files_searched,
         internal_summary=internal_summary,
     )
 

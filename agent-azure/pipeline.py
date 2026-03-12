@@ -151,8 +151,9 @@ def main() -> None:
                 tools_str = ", ".join(all_tools) if all_tools else "(none)"
 
                 for r in result.results:
+                    searched = (f"  kb={r.files_searched}" if r.files_searched else "")
                     print(f"    ↳ [{r.agent_key}]  skill={r.skill_name}  "
-                          f"ticket={r.ticket_id or '(none)'}  tools={r.tools_called}")
+                          f"ticket={r.ticket_id or '(none)'}  tools={r.tools_called}{searched}")
 
                 if result.ticket_ids:
                     print(f"  [tickets]      {', '.join(result.ticket_ids)}")
