@@ -11,6 +11,7 @@ Public API:
 
 import json
 import os
+import time
 from datetime import datetime
 from pathlib import Path
 
@@ -36,6 +37,17 @@ Return only valid JSON with keys: action, completeness, tone, comment
 comment should be one short sentence about the biggest gap (or "none" if all good)."""
 
 
+def _run_with_retry(client, thread_id, agent_id, attempts=3):
+    """Run create_and_process with retries on transient failures (e.g. timeouts)."""
+    for i in range(attempts):
+        try:
+            return client.runs.create_and_process(thread_id=thread_id, agent_id=agent_id)
+        except Exception:
+            if i == attempts - 1:
+                raise
+            time.sleep(2 ** i)
+
+
 def judge(client: AgentsClient, email: dict, ground_truth: str, generated: str) -> dict:
     """Score the generated reply against the ground truth. Returns scores dict."""
     subject = email.get("subject") or "(no subject)"
@@ -57,7 +69,7 @@ def judge(client: AgentsClient, email: dict, ground_truth: str, generated: str) 
     thread = client.threads.create()
     try:
         client.messages.create(thread_id=thread.id, role="user", content=user_msg)
-        run = client.runs.create_and_process(thread_id=thread.id, agent_id=agent.id)
+        run = _run_with_retry(client, thread.id, agent.id)
         if run.status != "completed":
             raise RuntimeError(f"Judge run failed: {run.status}")
 
@@ -76,7 +88,10 @@ def judge(client: AgentsClient, email: dict, ground_truth: str, generated: str) 
     if raw.startswith("```"):
         raw = raw.split("```")[1].lstrip("json").strip()
 
-    scores = json.loads(raw)
+    try:
+        scores = json.loads(raw)
+    except json.JSONDecodeError as exc:
+        raise ValueError(f"Judge returned invalid JSON: {exc!s} — raw={raw!r}") from exc
     scores["avg"] = (scores["action"] + scores["completeness"] + scores["tone"]) / 3
     return scores
 

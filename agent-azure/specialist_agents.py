@@ -26,17 +26,31 @@ Public API:
 
 import os
 import re
+import time
 from dataclasses import dataclass, field
 
 from azure.ai.agents import AgentsClient
-from azure.ai.agents.models import FileSearchTool, FunctionTool, ToolSet
+from azure.ai.agents.models import CodeInterpreterTool, FileSearchTool, FunctionTool, ToolSet
 from azure.core.credentials import TokenCredential
 
 from tools import SPECIALIST_TOOLS
 
 MODEL = os.environ.get("MODEL_DEPLOYMENT_NAME", "gpt-4o")
 
+CODE_INTERPRETER_AGENTS = {"billing", "technical_support"}
+
 _TICKET_RE = re.compile(r"TKT-\d+")
+
+
+def _run_with_retry(client, thread_id, agent_id, attempts=3):
+    """Run create_and_process with retries on transient failures (e.g. timeouts)."""
+    for i in range(attempts):
+        try:
+            return client.runs.create_and_process(thread_id=thread_id, agent_id=agent_id)
+        except Exception:
+            if i == attempts - 1:
+                raise
+            time.sleep(2 ** i)
 
 
 @dataclass
@@ -86,6 +100,8 @@ def create_specialist(
         toolset.add(FunctionTool(functions=tool_fns))
     if vector_store_id:
         toolset.add(FileSearchTool(vector_store_ids=[vector_store_id]))
+    if agent_key in CODE_INTERPRETER_AGENTS:
+        toolset.add(CodeInterpreterTool())
 
     agent = client.create_agent(
         model=MODEL,
@@ -124,7 +140,7 @@ def run_specialist(
 
     # create_and_process handles the tool-call loop automatically because
     # make_client registered our functions via enable_auto_function_calls.
-    run = client.runs.create_and_process(thread_id=thread.id, agent_id=agent.id)
+    run = _run_with_retry(client, thread.id, agent.id)
 
     if run.status == "incomplete":
         reason = getattr(getattr(run, "incomplete_details", None), "reason", "unknown")
@@ -174,6 +190,8 @@ def run_specialist(
                     tools_called.append(tc.function.name)
                     if tc.function.name == "escalate_to_human":
                         escalated = True
+                elif tc.type == "code_interpreter":
+                    tools_called.append("code_interpreter")
                 elif tc.type == "file_search" and hasattr(tc, "file_search"):
                     results = getattr(tc.file_search, "results", None) or []
                     for r in results:

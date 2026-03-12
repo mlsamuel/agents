@@ -8,6 +8,7 @@ Public API:
 
 import json
 import os
+import time
 
 from azure.ai.agents import AgentsClient
 
@@ -44,6 +45,17 @@ _QUEUE_TO_AGENT: dict[str, str] = {
 }
 
 
+def _run_with_retry(client, thread_id, agent_id, attempts=3):
+    """Run create_and_process with retries on transient failures (e.g. timeouts)."""
+    for i in range(attempts):
+        try:
+            return client.runs.create_and_process(thread_id=thread_id, agent_id=agent_id)
+        except Exception:
+            if i == attempts - 1:
+                raise
+            time.sleep(2 ** i)
+
+
 def classify(client: AgentsClient, email: dict) -> dict:
     """Classify an email and return classification dict including agent_key."""
     subject = email.get("subject") or "(no subject)"
@@ -61,10 +73,7 @@ def classify(client: AgentsClient, email: dict) -> dict:
             role="user",
             content=f"Subject: {subject}\n\nBody:\n{body}",
         )
-        run = client.runs.create_and_process(
-            thread_id=thread.id,
-            agent_id=agent.id,
-        )
+        run = _run_with_retry(client, thread.id, agent.id)
         if run.status != "completed":
             raise RuntimeError(f"Classifier run failed: {run.status}")
 
@@ -88,7 +97,10 @@ def classify(client: AgentsClient, email: dict) -> dict:
             raw = raw[4:]
         raw = raw.strip()
 
-    result = json.loads(raw)
+    try:
+        result = json.loads(raw)
+    except json.JSONDecodeError as exc:
+        raise ValueError(f"Classifier returned invalid JSON: {exc!s} — raw={raw!r}") from exc
     result["subject"] = subject
     result["agent_key"] = _QUEUE_TO_AGENT.get(result.get("queue", ""), "general")
     return result
