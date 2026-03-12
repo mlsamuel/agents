@@ -23,24 +23,32 @@ DATA_DIR        = pathlib.Path(__file__).parent / "data"
 KB_FILE         = DATA_DIR / "knowledge_base.json"
 GUIDELINES_FILE = DATA_DIR / "agent_guidelines.json"
 
-_KB_FILENAME         = "knowledge_base.md"
 _GUIDELINES_FILENAME = "agent_guidelines.md"
 
 
 # ── Markdown builders ─────────────────────────────────────────────────────────
 
-def build_markdown() -> str:
-    """Convert knowledge_base.json to a structured markdown document."""
+def _kb_filename(category: str) -> str:
+    """Return the vector store filename for a KB category, e.g. 'kb_billing.md'."""
+    return f"kb_{category.lower().replace(' ', '_')}.md"
+
+
+def build_category_markdowns() -> dict[str, str]:
+    """Convert knowledge_base.json to one markdown string per category.
+
+    Returns {category_key: markdown_content} where category_key is the raw
+    lowercase category value from the JSON (used for filenames and lookups).
+    """
     from collections import defaultdict
     kb_entries: list[dict] = json.loads(KB_FILE.read_text(encoding="utf-8"))
 
     by_category: dict[str, list[dict]] = defaultdict(list)
     for entry in kb_entries:
-        by_category[entry["category"].title()].append(entry)
+        by_category[entry["category"]].append(entry)
 
-    lines: list[str] = ["# Customer Support Knowledge Base\n"]
+    result = {}
     for category, entries in sorted(by_category.items()):
-        lines.append(f"\n## {category}\n")
+        lines: list[str] = [f"# Customer Support Knowledge Base — {category.title()}\n"]
         for entry in entries:
             lines.append(f"### {entry['topic']}")
             lines.append(f"**Q:** {entry['question']}")
@@ -48,7 +56,8 @@ def build_markdown() -> str:
             if entry.get("keywords"):
                 lines.append(f"*Keywords: {', '.join(entry['keywords'])}*")
             lines.append("")
-    return "\n".join(lines)
+        result[category] = "\n".join(lines)
+    return result
 
 
 def build_guidelines_markdown() -> str:
@@ -119,8 +128,21 @@ def _make_client() -> AgentsClient:
 # ── Public update API (called by improver.py) ─────────────────────────────────
 
 def update_kb(vector_store_id: str) -> None:
-    """Re-upload the current knowledge_base.json, replacing the previous version."""
-    _replace_file(_make_client(), build_markdown(), _KB_FILENAME, vector_store_id)
+    """Re-upload all KB category files, replacing previous versions."""
+    client = _make_client()
+    for category, content in build_category_markdowns().items():
+        _replace_file(client, content, _kb_filename(category), vector_store_id)
+
+
+def update_kb_category(vector_store_id: str, category: str) -> None:
+    """Re-upload only the KB file for one category. Called by improver after adding an entry."""
+    markdowns = build_category_markdowns()
+    content = markdowns.get(category)
+    if not content:
+        # Category not found — fall back to full rebuild
+        update_kb(vector_store_id)
+        return
+    _replace_file(_make_client(), content, _kb_filename(category), vector_store_id)
 
 
 def update_guidelines(vector_store_id: str) -> None:
@@ -155,10 +177,15 @@ def main() -> None:
         print(f"Created vector store: {vector_store_id}")
         print(f"\n  Add to your .env:  VECTOR_STORE_ID={vector_store_id}\n")
 
-    print("Uploading knowledge base...")
-    kb_md = build_markdown()
-    _replace_file(client, kb_md, _KB_FILENAME, vector_store_id)
-    print(f"  {len(kb_md):,} bytes, {kb_md.count('###')} entries — done")
+    print("Uploading knowledge base (per category)...")
+    category_mds = build_category_markdowns()
+    total_entries = 0
+    for category, content in category_mds.items():
+        _replace_file(client, content, _kb_filename(category), vector_store_id)
+        n = content.count("###")
+        total_entries += n
+        print(f"  {_kb_filename(category)}: {n} entries")
+    print(f"  {total_entries} total entries — done")
 
     guidelines_md = build_guidelines_markdown()
     if guidelines_md:

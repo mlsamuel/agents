@@ -240,7 +240,7 @@ def apply_proposals(
     vector_store_id: str,
 ) -> None:
     """Apply improvement proposals to skills, KB, and guidelines."""
-    from kb_setup import update_guidelines, update_kb  # import here to avoid circular deps
+    from kb_setup import update_guidelines, update_kb_category  # import here to avoid circular deps
 
     kb_path = Path(__file__).parent / "data" / "knowledge_base.json"
 
@@ -288,11 +288,11 @@ def apply_proposals(
                 kb_entries.append(entry)
                 print(f"  KB entry added: id={new_id} — {entry.get('topic', '')}")
 
-            # Save and re-upload
+            # Save and re-upload only the affected category
             kb_path.write_text(json.dumps(kb_entries, indent=2, ensure_ascii=False), encoding="utf-8")
             try:
-                update_kb(vector_store_id)
-                print(f"  KB re-uploaded to vector store")
+                update_kb_category(vector_store_id, entry.get("category", ""))
+                print(f"  KB re-uploaded to vector store ({entry.get('category', 'unknown')} category)")
             except Exception as exc:
                 print(f"  KB upload failed: {exc}")
 
