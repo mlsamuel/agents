@@ -75,10 +75,21 @@ MODEL_DEPLOYMENT_NAME=gpt-4o
 FAST_MODEL=gpt-4o-mini
 
 CONTENT_SAFETY_ENDPOINT=https://<resource>.cognitiveservices.azure.com/
-CONTENT_SAFETY_KEY=<key>
 
 VECTOR_STORE_ID=          # set after running kb_setup.py
 LOG_LEVEL=INFO            # set to DEBUG for step-level traces
+```
+
+Content Safety uses `DefaultAzureCredential` — no key needed. Assign the
+`Cognitive Services User` role to your identity (or Managed Identity in production):
+
+```bash
+az role assignment create \
+  --role "Cognitive Services User" \
+  --assignee $(az ad signed-in-user show --query id -o tsv) \
+  --scope $(az cognitiveservices account show \
+      --name <content-safety-resource-name> \
+      --resource-group <rg> --query id -o tsv)
 ```
 
 Optional (enables Azure Monitor tracing + log ingestion):

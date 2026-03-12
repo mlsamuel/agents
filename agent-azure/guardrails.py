@@ -1,8 +1,8 @@
 import os
 from azure.ai.contentsafety import ContentSafetyClient
 from azure.ai.contentsafety.models import AnalyzeTextOptions, TextCategory
-from azure.core.credentials import AzureKeyCredential
 from azure.core.exceptions import HttpResponseError
+from azure.identity import DefaultAzureCredential
 
 
 class GuardrailError(Exception):
@@ -29,9 +29,10 @@ CATEGORIES = [
 def _get_client() -> ContentSafetyClient:
     global _client
     if _client is None:
-        endpoint = os.environ["CONTENT_SAFETY_ENDPOINT"]
-        key = os.environ["CONTENT_SAFETY_KEY"]
-        _client = ContentSafetyClient(endpoint, AzureKeyCredential(key))
+        _client = ContentSafetyClient(
+            os.environ["CONTENT_SAFETY_ENDPOINT"],
+            DefaultAzureCredential(),
+        )
     return _client
 
 
