@@ -111,7 +111,11 @@ def _run_email(client, email, i, args, vector_store_id, tracer, out_path) -> tup
         span.set_attribute("email.subject", subject[:120])
 
         # Classify
-        classification = classify(client, email)
+        with tracer.start_as_current_span("pipeline.classify") as cls_span:
+            classification = classify(client, email)
+            cls_span.set_attribute("classification.queue", classification["queue"])
+            cls_span.set_attribute("classification.priority", classification["priority"])
+            cls_span.set_attribute("classification.type", classification["type"])
         print(f"  [classifier]   queue={classification['queue']}  "
               f"priority={classification['priority']}  type={classification['type']}")
         print(f"                 reason: {classification.get('reason', '')}")

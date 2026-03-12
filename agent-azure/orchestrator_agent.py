@@ -28,7 +28,7 @@ from guardrails import GuardrailError, screen
 from logger import get_logger
 from skills import load_skills, select_skill
 from specialist_agents import SpecialistResult, cleanup, create_specialist, make_client, run_specialist
-from tracing import setup_tracing
+from tracing import get_tracer, setup_tracing
 
 log = get_logger(__name__)
 
@@ -152,7 +152,12 @@ def _run_one_specialist(
     client = make_client(os.environ["PROJECT_ENDPOINT"], DefaultAzureCredential(), skill_tools)
     agent, thread = create_specialist(client, agent_key, skill_content, vector_store_id, skill_tools)
     try:
-        return run_specialist(client, agent, thread, email, classification)
+        with get_tracer().start_as_current_span(f"pipeline.specialist.{agent_key}") as span:
+            span.set_attribute("skill_name", skill_name)
+            result = run_specialist(client, agent, thread, email, classification)
+            span.set_attribute("tools_called", str(result.tools_called))
+            span.set_attribute("files_searched", str(result.files_searched))
+            return result
     finally:
         cleanup(client, agent, thread)
 
@@ -234,7 +239,7 @@ def orchestrate(
     if tracer is None:
         tracer = setup_tracing()
 
-    with tracer.start_as_current_span("orchestrate") as span:
+    with tracer.start_as_current_span("pipeline.orchestrate") as span:
         span.set_attribute("email.subject", subject[:120])
         span.set_attribute("classification.queue", classification.get("queue", ""))
 
@@ -246,16 +251,17 @@ def orchestrate(
             raise
 
         # Decompose
-        with tracer.start_as_current_span("decompose"):
+        with tracer.start_as_current_span("pipeline.decompose") as decompose_span:
             agent_keys = _decompose(client, email, classification)
+            decompose_span.set_attribute("agents_selected", str(agent_keys))
         span.set_attribute("agents.used", str(agent_keys))
 
-        # Fan out
-        with tracer.start_as_current_span("fan_out"):
-            results = _fan_out(agent_keys, email, classification, vector_store_id)
+        # Fan out (per-specialist spans emitted inside _run_one_specialist)
+        results = _fan_out(agent_keys, email, classification, vector_store_id)
 
         # Merge
-        with tracer.start_as_current_span("merge"):
+        with tracer.start_as_current_span("pipeline.merge") as merge_span:
+            merge_span.set_attribute("specialist_count", len(results))
             final_reply = _merge(client, email, results)
 
         # Screen output
