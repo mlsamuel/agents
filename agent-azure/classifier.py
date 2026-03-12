@@ -10,6 +10,7 @@ import json
 import os
 
 from azure.ai.agents import AgentsClient
+from azure.ai.agents.models import AgentsResponseFormat
 
 from agent_utils import run_with_retry
 from logger import get_logger
@@ -31,8 +32,7 @@ Given an email subject and body, return a JSON object with these fields:
   - type:     one of [Incident, Problem, Request, Change, Question, Complaint]
   - reason:   one short sentence explaining your classification
 
-If the email has no subject line, rely entirely on the body for classification.
-Respond with only valid JSON, no markdown fences."""
+If the email has no subject line, rely entirely on the body for classification."""
 
 # Map classifier queues to internal agent keys
 _QUEUE_TO_AGENT: dict[str, str] = {
@@ -58,6 +58,7 @@ def classify(client: AgentsClient, email: dict) -> dict:
         model=MODEL,
         name="email-classifier",
         instructions=SYSTEM_PROMPT,
+        response_format=AgentsResponseFormat(type="json_object"),
     )
     thread = client.threads.create()
     try:
@@ -82,13 +83,6 @@ def classify(client: AgentsClient, email: dict) -> dict:
     finally:
         client.threads.delete(thread.id)
         client.delete_agent(agent.id)
-
-    # Strip markdown fences if present
-    if raw.startswith("```"):
-        raw = raw.split("```")[1]
-        if raw.startswith("json"):
-            raw = raw[4:]
-        raw = raw.strip()
 
     try:
         result = json.loads(raw)

@@ -15,6 +15,7 @@ from datetime import datetime
 from pathlib import Path
 
 from azure.ai.agents import AgentsClient
+from azure.ai.agents.models import AgentsResponseFormat
 
 from agent_utils import run_with_retry
 from logger import get_logger
@@ -37,7 +38,7 @@ Score the generated reply on three dimensions, each 1–5:
   tone        - Was the tone appropriate (warm, clear, professional)?
                 5=excellent, 1=cold/confusing/inappropriate
 
-Return only valid JSON with keys: action, completeness, tone, comment
+Return JSON with keys: action, completeness, tone, comment
 comment should be one short sentence about the biggest gap (or "none" if all good)."""
 
 
@@ -59,6 +60,7 @@ def judge(client: AgentsClient, email: dict, ground_truth: str, generated: str) 
         model=MODEL,
         name="eval-judge",
         instructions=JUDGE_SYSTEM,
+        response_format=AgentsResponseFormat(type="json_object"),
     )
     thread = client.threads.create()
     try:
@@ -78,9 +80,6 @@ def judge(client: AgentsClient, email: dict, ground_truth: str, generated: str) 
     finally:
         client.threads.delete(thread.id)
         client.delete_agent(agent.id)
-
-    if raw.startswith("```"):
-        raw = raw.split("```")[1].lstrip("json").strip()
 
     try:
         scores = json.loads(raw)
