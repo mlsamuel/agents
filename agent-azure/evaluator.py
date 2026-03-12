@@ -89,7 +89,8 @@ def _section_lines(s: dict) -> list[str]:
         "---",
         f"## [{s['index']}] {s['subject']}",
         f"**Queue:** {s['queue']} | **Type:** {s['type']} | **Priority:** {s['priority']}",
-        f"**Skills:** {s['skills']}  **Tools:** {s['tools']}",
+        f"**Skills:** {s['skills']}  **Tools:** {s['tools']}"
+        + (f"  **KB:** {', '.join(s['files_searched'])}" if s.get("files_searched") else ""),
         f"**Scores:** action={score['action']}/5  completeness={score['completeness']}/5  "
         f"tone={score['tone']}/5  avg={s['avg']:.1f}",
         f"**Comment:** {score['comment']}",

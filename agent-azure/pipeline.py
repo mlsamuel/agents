@@ -201,6 +201,7 @@ def main() -> None:
                     "priority":     classification["priority"],
                     "skills":       skills_str,
                     "tools":        tools_str,
+                    "files_searched": [f for r in result.results for f in r.files_searched],
                     "ground_truth": ground_truth,
                     "generated":    generated,
                     "score":        scores,
