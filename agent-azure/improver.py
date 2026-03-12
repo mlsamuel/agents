@@ -234,7 +234,7 @@ def apply_proposals(
     vector_store_id: str,
 ) -> None:
     """Apply improvement proposals to skills, KB, and guidelines."""
-    from kb_setup import update_kb  # import here to avoid circular deps
+    from kb_setup import update_guidelines, update_kb  # import here to avoid circular deps
 
     kb_path = Path(__file__).parent / "data" / "knowledge_base.json"
 
@@ -307,6 +307,12 @@ def apply_proposals(
                     print(f"  Guideline merged: {merged.get('topic', '')}")
                 except Exception as exc:
                     print(f"  Guideline merge failed: {exc} — skipping")
+                    continue
             else:
                 store.add_guideline(entry)
                 print(f"  Guideline added: {entry.get('topic', '')}")
+            try:
+                update_guidelines(vector_store_id)
+                print(f"  Guidelines re-uploaded to vector store")
+            except Exception as exc:
+                print(f"  Guidelines upload failed: {exc}")

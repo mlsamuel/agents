@@ -68,18 +68,16 @@ def create_specialist(
     agent_key: str,
     skill_content: str,
     vector_store_id: str,
-    guidelines_text: str = "",
 ) -> tuple:
     """Create a Foundry specialist agent with FunctionTools + FileSearch.
 
     The client must already have enable_auto_function_calls configured
     (done by make_client) so that create_and_process can dispatch calls.
+    Guidelines are retrieved at runtime via FileSearch (same vector store as KB).
 
     Returns (agent, thread).
     """
     system_prompt = skill_content
-    if guidelines_text:
-        system_prompt = system_prompt + "\n\n" + guidelines_text
 
     toolset = ToolSet()
     tool_fns = SPECIALIST_TOOLS.get(agent_key, set())

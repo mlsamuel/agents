@@ -11,6 +11,7 @@ Public API:
     add_training_email(skill_name, subject, body, answer) -> bool
     load_guidelines()                                     -> list[dict]
     save_guidelines(guidelines)                           -> None
+    add_guideline(entry)                                  -> None
     append_run_result(result)                             -> None
     load_run_results()                                    -> list[dict]
 
@@ -91,21 +92,6 @@ def add_guideline(entry: dict) -> None:
     guidelines.append(entry)
     save_guidelines(guidelines)
 
-
-def guidelines_as_text() -> str:
-    """Format all guidelines as a readable text block for injection into system prompts."""
-    guidelines = load_guidelines()
-    if not guidelines:
-        return ""
-    lines = ["## Agent Guidelines\n"]
-    for g in guidelines:
-        lines.append(f"**{g.get('topic', 'Guideline')}**")
-        if g.get("trigger"):
-            lines.append(f"When: {g['trigger']}")
-        if g.get("instruction"):
-            lines.append(f"Do: {g['instruction']}")
-        lines.append("")
-    return "\n".join(lines)
 
 
 # ── Pipeline results ──────────────────────────────────────────────────────────

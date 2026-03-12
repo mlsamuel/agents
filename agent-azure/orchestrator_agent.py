@@ -27,7 +27,6 @@ from azure.identity import DefaultAzureCredential
 from guardrails import GuardrailError, screen
 from skills import load_skills, select_skill
 from specialist_agents import SpecialistResult, cleanup, create_specialist, make_client, run_specialist
-from store import guidelines_as_text
 from tracing import setup_tracing
 
 MODEL = os.environ.get("MODEL_DEPLOYMENT_NAME", "gpt-4o")
@@ -131,7 +130,6 @@ def _run_one_specialist(
     email: dict,
     classification: dict,
     vector_store_id: str,
-    guidelines_text: str,
 ) -> SpecialistResult:
     """Create, run, and clean up one specialist agent.
 
@@ -144,9 +142,7 @@ def _run_one_specialist(
     )
     # Read endpoint lazily so load_dotenv() has already run by call time.
     client = make_client(os.environ["PROJECT_ENDPOINT"], DefaultAzureCredential(), agent_key)
-    agent, thread = create_specialist(
-        client, agent_key, skill_content, vector_store_id, guidelines_text
-    )
+    agent, thread = create_specialist(client, agent_key, skill_content, vector_store_id)
     try:
         return run_specialist(client, agent, thread, email, classification)
     finally:
@@ -158,29 +154,20 @@ def _fan_out(
     email: dict,
     classification: dict,
     vector_store_id: str,
-    guidelines_text: str,
 ) -> list[SpecialistResult]:
     """Run specialist agents — parallel if multiple, sequential if one."""
     if len(agent_keys) == 1:
-        return [_run_one_specialist(
-            agent_keys[0], email, classification,
-            vector_store_id, guidelines_text,
-        )]
+        return [_run_one_specialist(agent_keys[0], email, classification, vector_store_id)]
 
     # Multiple specialists: run in parallel via ThreadPoolExecutor
     results: list[SpecialistResult | None] = [None] * len(agent_keys)
     with ThreadPoolExecutor(max_workers=len(agent_keys)) as executor:
         futures = {
-            executor.submit(
-                _run_one_specialist,
-                key, email, classification,
-                vector_store_id, guidelines_text,
-            ): i
+            executor.submit(_run_one_specialist, key, email, classification, vector_store_id): i
             for i, key in enumerate(agent_keys)
         }
         for future in as_completed(futures):
-            idx = futures[future]
-            results[idx] = future.result()
+            results[futures[future]] = future.result()
 
     return [r for r in results if r is not None]
 
@@ -248,8 +235,6 @@ def orchestrate(
             span.set_attribute("guardrail.input_blocked", True)
             raise
 
-        guidelines_text = guidelines_as_text()
-
         # Decompose
         with tracer.start_as_current_span("decompose"):
             agent_keys = _decompose(client, email, classification)
@@ -257,7 +242,7 @@ def orchestrate(
 
         # Fan out
         with tracer.start_as_current_span("fan_out"):
-            results = _fan_out(agent_keys, email, classification, vector_store_id, guidelines_text)
+            results = _fan_out(agent_keys, email, classification, vector_store_id)
 
         # Merge
         with tracer.start_as_current_span("merge"):
