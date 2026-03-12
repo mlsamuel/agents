@@ -25,9 +25,12 @@ from azure.ai.agents import AgentsClient
 from azure.identity import DefaultAzureCredential
 
 from guardrails import GuardrailError, screen
+from logger import get_logger
 from skills import load_skills, select_skill
 from specialist_agents import SpecialistResult, cleanup, create_specialist, make_client, run_specialist
 from tracing import setup_tracing
+
+log = get_logger(__name__)
 
 MODEL = os.environ.get("MODEL_DEPLOYMENT_NAME", "gpt-4o")
 FAST_MODEL = os.environ.get("FAST_MODEL", "gpt-4o-mini")
@@ -118,9 +121,13 @@ def _decompose(client: AgentsClient, email: dict, classification: dict) -> list[
     try:
         plan = json.loads(raw)
         agents = [k for k in plan.get("agents", []) if k in VALID_AGENT_KEYS]
-        return agents if agents else [classification.get("agent_key", "general")]
+        result = agents if agents else [classification.get("agent_key", "general")]
+        log.debug("decompose → agents=%s reason=%s", result, plan.get("reason", ""))
+        return result
     except (json.JSONDecodeError, KeyError):
-        return [classification.get("agent_key", "general")]
+        fallback = [classification.get("agent_key", "general")]
+        log.debug("decompose → fallback=%s (parse error, raw=%r)", fallback, raw[:120])
+        return fallback
 
 
 # ── Step 2: Fan out ───────────────────────────────────────────────────────────
@@ -137,12 +144,13 @@ def _run_one_specialist(
     isolated per thread when multiple specialists run in parallel.
     """
     skills = load_skills(agent_key)
-    _, skill_content = select_skill(
+    skill_name, skill_content = select_skill(
         skills, classification.get("type", ""), email.get("subject", "")
     )
+    skill_tools = skills.get(skill_name, {}).get("tools", [])
     # Read endpoint lazily so load_dotenv() has already run by call time.
-    client = make_client(os.environ["PROJECT_ENDPOINT"], DefaultAzureCredential(), agent_key)
-    agent, thread = create_specialist(client, agent_key, skill_content, vector_store_id)
+    client = make_client(os.environ["PROJECT_ENDPOINT"], DefaultAzureCredential(), skill_tools)
+    agent, thread = create_specialist(client, agent_key, skill_content, vector_store_id, skill_tools)
     try:
         return run_specialist(client, agent, thread, email, classification)
     finally:
@@ -157,8 +165,10 @@ def _fan_out(
 ) -> list[SpecialistResult]:
     """Run specialist agents — parallel if multiple, sequential if one."""
     if len(agent_keys) == 1:
+        log.debug("fan_out → single specialist: %s", agent_keys[0])
         return [_run_one_specialist(agent_keys[0], email, classification, vector_store_id)]
 
+    log.debug("fan_out → parallel specialists: %s", agent_keys)
     # Multiple specialists: run in parallel via ThreadPoolExecutor
     results: list[SpecialistResult | None] = [None] * len(agent_keys)
     with ThreadPoolExecutor(max_workers=len(agent_keys)) as executor:

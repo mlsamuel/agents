@@ -33,11 +33,12 @@ from azure.ai.agents import AgentsClient
 from azure.ai.agents.models import CodeInterpreterTool, FileSearchTool, FunctionTool, ToolSet
 from azure.core.credentials import TokenCredential
 
-from tools import SPECIALIST_TOOLS
+from logger import get_logger
+from tools import ALL_TOOLS
+
+log = get_logger(__name__)
 
 MODEL = os.environ.get("MODEL_DEPLOYMENT_NAME", "gpt-4o")
-
-CODE_INTERPRETER_AGENTS = {"billing", "technical_support"}
 
 _TICKET_RE = re.compile(r"TKT-\d+")
 
@@ -47,9 +48,10 @@ def _run_with_retry(client, thread_id, agent_id, attempts=3):
     for i in range(attempts):
         try:
             return client.runs.create_and_process(thread_id=thread_id, agent_id=agent_id)
-        except Exception:
+        except Exception as exc:
             if i == attempts - 1:
                 raise
+            log.debug("create_and_process attempt %d failed (%s), retrying in %ds", i + 1, exc, 2 ** i)
             time.sleep(2 ** i)
 
 
@@ -63,16 +65,17 @@ class SpecialistResult:
     tools_called: list[str] = field(default_factory=list)
     files_searched: list[str] = field(default_factory=list)
     internal_summary: str = ""
+    steps_log: list[dict] = field(default_factory=list)
 
 
-def make_client(endpoint: str, credential: TokenCredential, agent_key: str) -> AgentsClient:
-    """Create a fresh AgentsClient pre-configured for agent_key's function tools.
+def make_client(endpoint: str, credential: TokenCredential, skill_tools: list) -> AgentsClient:
+    """Create a fresh AgentsClient pre-configured for the skill's function tools.
 
     Using a per-specialist client lets us call enable_auto_function_calls safely
     in parallel threads without clobbering each other's registered functions.
     """
     client = AgentsClient(endpoint=endpoint, credential=credential)
-    tool_fns = SPECIALIST_TOOLS.get(agent_key, set())
+    tool_fns = {ALL_TOOLS[t] for t in skill_tools if t in ALL_TOOLS}
     if tool_fns:
         client.enable_auto_function_calls(tool_fns)
     return client
@@ -83,6 +86,7 @@ def create_specialist(
     agent_key: str,
     skill_content: str,
     vector_store_id: str,
+    skill_tools: list | None = None,
 ) -> tuple:
     """Create a Foundry specialist agent with FunctionTools + FileSearch.
 
@@ -95,12 +99,12 @@ def create_specialist(
     system_prompt = skill_content
 
     toolset = ToolSet()
-    tool_fns = SPECIALIST_TOOLS.get(agent_key, set())
+    tool_fns = {ALL_TOOLS[t] for t in (skill_tools or []) if t in ALL_TOOLS}
     if tool_fns:
         toolset.add(FunctionTool(functions=tool_fns))
     if vector_store_id:
         toolset.add(FileSearchTool(vector_store_ids=[vector_store_id]))
-    if agent_key in CODE_INTERPRETER_AGENTS:
+    if skill_tools and "code_interpreter" in skill_tools:
         toolset.add(CodeInterpreterTool())
 
     agent = client.create_agent(
@@ -179,25 +183,67 @@ def run_specialist(
     m = _TICKET_RE.search(reply)
     ticket_id = m.group(0) if m else None
 
-    # Extract tools_called, escalated, and file_search hits from run steps
+    # Extract tools_called, escalated, file_search hits, and step trace from run steps.
+    # run_steps.list returns most-recent-first; reverse for chronological order.
     tools_called: list[str] = []
-    files_searched: list[str] = []  # filenames retrieved via FileSearch
+    files_searched: list[str] = []
+    steps_log: list[dict] = []
     escalated = False
-    for step in client.run_steps.list(thread_id=thread.id, run_id=run.id):
+    raw_steps = list(client.run_steps.list(thread_id=thread.id, run_id=run.id))
+    for step_num, step in enumerate(reversed(raw_steps), start=1):
         if step.type == "tool_calls" and step.step_details:
             for tc in step.step_details.tool_calls:
                 if hasattr(tc, "function"):
-                    tools_called.append(tc.function.name)
-                    if tc.function.name == "escalate_to_human":
+                    name = tc.function.name
+                    tools_called.append(name)
+                    if name == "escalate_to_human":
                         escalated = True
+                    steps_log.append({
+                        "step": step_num,
+                        "type": "function",
+                        "name": name,
+                        "args": tc.function.arguments,
+                    })
                 elif tc.type == "code_interpreter":
                     tools_called.append("code_interpreter")
+                    ci = getattr(tc, "code_interpreter", None)
+                    code = getattr(ci, "input", "") if ci else ""
+                    outputs = getattr(ci, "outputs", []) if ci else []
+                    # Collect all outputs regardless of type; surface type name for unknown types
+                    out_parts = []
+                    for o in outputs:
+                        otype = getattr(o, "type", "unknown")
+                        if otype == "logs":
+                            text = getattr(o, "logs", "")
+                        else:
+                            # Fallback: try common attribute names, then repr
+                            text = (getattr(o, "logs", None)
+                                    or getattr(o, "text", None)
+                                    or f"[{otype} output — no text attribute]")
+                        if text:
+                            out_parts.append(text)
+                    stdout = "\n".join(out_parts)
+                    steps_log.append({
+                        "step": step_num,
+                        "type": "code_interpreter",
+                        "code": code,
+                        "output": stdout,
+                        "output_count": len(outputs),
+                    })
                 elif tc.type == "file_search" and hasattr(tc, "file_search"):
                     results = getattr(tc.file_search, "results", None) or []
+                    fnames = []
                     for r in results:
                         fname = getattr(r, "file_name", None)
                         if fname and fname not in files_searched:
                             files_searched.append(fname)
+                        if fname and fname not in fnames:
+                            fnames.append(fname)
+                    steps_log.append({
+                        "step": step_num,
+                        "type": "file_search",
+                        "files": fnames,
+                    })
 
     internal_summary = reply.split(".")[0].strip() if reply else ""
 
@@ -210,6 +256,7 @@ def run_specialist(
         tools_called=tools_called,
         files_searched=files_searched,
         internal_summary=internal_summary,
+        steps_log=steps_log,
     )
 
 

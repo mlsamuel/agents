@@ -20,6 +20,9 @@ from azure.ai.agents import AgentsClient
 
 import skills as skills_mod
 import store
+from logger import get_logger
+
+log = get_logger(__name__)
 
 IMPROVE_MODEL = os.environ.get("MODEL_DEPLOYMENT_NAME", "gpt-4o")
 MERGE_MODEL   = os.environ.get("FAST_MODEL", "gpt-4o-mini")
@@ -195,7 +198,10 @@ def generate_proposals(
     raw = _call_agent(client, IMPROVE_SYSTEM, user_msg, model=IMPROVE_MODEL)
     raw = _strip_fences(raw)
     data = json.loads(raw)
-    return data.get("proposals", [])
+    proposals = data.get("proposals", [])
+    log.debug("generate_proposals → skill=%s proposals=%d types=%s",
+              skill_name, len(proposals), [p["type"] for p in proposals])
+    return proposals
 
 
 # ── Apply ─────────────────────────────────────────────────────────────────────
@@ -240,6 +246,7 @@ def apply_proposals(
 
     for p in proposals:
         ptype = p["type"]
+        log.debug("apply_proposal → type=%s rationale=%s", ptype, p.get("rationale", "")[:80])
 
         if ptype in ("skill_edit", "new_skill"):
             meta, body = skills_mod.parse_frontmatter(p["new_content"])

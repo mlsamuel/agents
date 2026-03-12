@@ -12,6 +12,10 @@ import time
 
 from azure.ai.agents import AgentsClient
 
+from logger import get_logger
+
+log = get_logger(__name__)
+
 MODEL = os.environ.get("FAST_MODEL", os.environ.get("MODEL_DEPLOYMENT_NAME", "gpt-4o-mini"))
 
 SYSTEM_PROMPT = """You are an email classifier for a customer support system.
@@ -50,9 +54,10 @@ def _run_with_retry(client, thread_id, agent_id, attempts=3):
     for i in range(attempts):
         try:
             return client.runs.create_and_process(thread_id=thread_id, agent_id=agent_id)
-        except Exception:
+        except Exception as exc:
             if i == attempts - 1:
                 raise
+            log.debug("classifier attempt %d failed (%s), retrying in %ds", i + 1, exc, 2 ** i)
             time.sleep(2 ** i)
 
 

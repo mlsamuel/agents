@@ -183,12 +183,15 @@ def send_reply(message: str, ticket_id: str = "") -> str:
     return json.dumps(result)
 
 
-# ── tool sets by specialist ───────────────────────────────────────────────────
+# ── tool registry ─────────────────────────────────────────────────────────────
 
-# Which Python functions each specialist gets as FunctionTools
-SPECIALIST_TOOLS: dict[str, set] = {
-    "billing": {lookup_customer, check_order_status, process_refund, create_ticket, escalate_to_human},
-    "returns": {lookup_customer, check_order_status, process_refund, create_ticket},
-    "technical_support": {lookup_customer, get_ticket_history, create_ticket, escalate_to_human},
-    "general": {lookup_customer, create_ticket},
+# Maps frontmatter tool names → callable, for resolving skill tools at runtime.
+ALL_TOOLS: dict[str, object] = {
+    "lookup_customer":    lookup_customer,
+    "get_ticket_history": get_ticket_history,
+    "create_ticket":      create_ticket,
+    "check_order_status": check_order_status,
+    "process_refund":     process_refund,
+    "escalate_to_human":  escalate_to_human,
+    "send_reply":         send_reply,
 }

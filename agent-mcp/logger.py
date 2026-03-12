@@ -46,6 +46,8 @@ def get_logger(name: str) -> logging.Logger:
     If __name__ is '__main__' or already starts with 'agents', it is used
     as-is; otherwise it is prefixed with 'agents.'.
     """
-    if name == "__main__" or name.startswith("agents"):
+    if name == "__main__":
+        return logging.getLogger("agents.__main__")
+    if name.startswith("agents"):
         return logging.getLogger(name)
     return logging.getLogger(f"agents.{name}")

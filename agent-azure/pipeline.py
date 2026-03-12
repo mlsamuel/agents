@@ -15,6 +15,7 @@ import csv
 import os
 from pathlib import Path
 
+from logger import get_logger  # must be first — silences third-party loggers
 from dotenv import load_dotenv
 from azure.ai.agents import AgentsClient
 from azure.identity import DefaultAzureCredential
@@ -34,6 +35,8 @@ from store import (
 from tracing import setup_tracing
 
 load_dotenv(Path(__file__).parent / ".env")
+
+log = get_logger(__name__)
 
 DATA_DIR = Path(__file__).parent / "data"
 EMAILS_CSV = DATA_DIR / "emails.csv"
@@ -154,6 +157,27 @@ def main() -> None:
                     searched = (f"  kb={r.files_searched}" if r.files_searched else "")
                     print(f"    ↳ [{r.agent_key}]  skill={r.skill_name}  "
                           f"ticket={r.ticket_id or '(none)'}  tools={r.tools_called}{searched}")
+                    if r.steps_log:
+                        log.debug("      %-5s  %-18s  detail", "step", "type")
+                        log.debug("      %s  %s  %s", "─"*5, "─"*18, "─"*50)
+                        for s in r.steps_log:
+                            if s["type"] == "function":
+                                log.debug("      %-5s  %-18s  args=%s",
+                                             s["step"], "fn: " + s["name"], s["args"])
+                            elif s["type"] == "code_interpreter":
+                                n_out = s.get("output_count", "?")
+                                out_label = (
+                                    s["output"].replace("\n", " | ")[:300]
+                                    if s["output"]
+                                    else f"(no output — {n_out} output object(s) in response)"
+                                )
+                                log.debug("      %-5s  %-18s  output: %s",
+                                             s["step"], "code_interpreter", out_label)
+                                log.debug("      %-5s  %-18s  code:   %s",
+                                             "", "", s["code"].replace("\n", "↵ ")[:250])
+                            elif s["type"] == "file_search":
+                                log.debug("      %-5s  %-18s  files=%s",
+                                             s["step"], "file_search", s["files"])
 
                 if result.ticket_ids:
                     print(f"  [tickets]      {', '.join(result.ticket_ids)}")
