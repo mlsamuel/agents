@@ -3,32 +3,40 @@ specialist_agents.py - Foundry specialist agent factory.
 
 Each specialist is a Foundry agent with:
   - Skill content (Markdown) as system prompt + agent guidelines appended
-  - FunctionTool set appropriate for their domain
+  - FunctionTool set appropriate for their domain (via enable_auto_function_calls)
   - FileSearchTool connected to the KB vector store
 
+Design note: each specialist gets its own AgentsClient so that
+enable_auto_function_calls (which sets global state on the client) is
+safe to use in parallel ThreadPoolExecutor workers.
+
 Public API:
-    create_specialist(client, agent_key, skill_content, vector_store_id, guidelines_text)
+    create_specialist(client, agent_key, skill_content,
+                      vector_store_id, guidelines_text)
         -> (agent, thread)
 
     run_specialist(client, agent, thread, email, classification)
         -> SpecialistResult
 
     cleanup(client, agent, thread) -> None
+
+    make_client(endpoint, credential) -> AgentsClient
+        Convenience: build a fresh client with auto-function-calls for agent_key.
 """
 
-import json
 import os
-import time
+import re
 from dataclasses import dataclass, field
 
 from azure.ai.agents import AgentsClient
 from azure.ai.agents.models import FileSearchTool, FunctionTool, ToolSet
+from azure.core.credentials import TokenCredential
 
 from tools import SPECIALIST_TOOLS
 
-_POLL_INTERVAL = 0.5
-
 MODEL = os.environ.get("MODEL_DEPLOYMENT_NAME", "gpt-4o")
+
+_TICKET_RE = re.compile(r"TKT-\d+")
 
 
 @dataclass
@@ -42,26 +50,39 @@ class SpecialistResult:
     internal_summary: str = ""
 
 
+def make_client(endpoint: str, credential: TokenCredential, agent_key: str) -> AgentsClient:
+    """Create a fresh AgentsClient pre-configured for agent_key's function tools.
+
+    Using a per-specialist client lets us call enable_auto_function_calls safely
+    in parallel threads without clobbering each other's registered functions.
+    """
+    client = AgentsClient(endpoint=endpoint, credential=credential)
+    tool_fns = SPECIALIST_TOOLS.get(agent_key, set())
+    if tool_fns:
+        client.enable_auto_function_calls(tool_fns)
+    return client
+
+
 def create_specialist(
     client: AgentsClient,
     agent_key: str,
-    skill_name: str,
     skill_content: str,
     vector_store_id: str,
     guidelines_text: str = "",
 ) -> tuple:
     """Create a Foundry specialist agent with FunctionTools + FileSearch.
 
+    The client must already have enable_auto_function_calls configured
+    (done by make_client) so that create_and_process can dispatch calls.
+
     Returns (agent, thread).
     """
-    # Build system prompt: skill content + guidelines
     system_prompt = skill_content
     if guidelines_text:
         system_prompt = system_prompt + "\n\n" + guidelines_text
 
-    # Build toolset
-    tool_fns = SPECIALIST_TOOLS.get(agent_key, set())
     toolset = ToolSet()
+    tool_fns = SPECIALIST_TOOLS.get(agent_key, set())
     if tool_fns:
         toolset.add(FunctionTool(functions=tool_fns))
     if vector_store_id:
@@ -84,16 +105,11 @@ def run_specialist(
     email: dict,
     classification: dict,
 ) -> SpecialistResult:
-    """Send an email to a specialist agent and return the result.
-
-    Extracts the reply text, tool calls made, ticket_id, and escalation status
-    from the run steps.
-    """
+    """Send an email to a specialist agent and return the result."""
     agent_key = agent.name.replace("-specialist", "")
     subject = email.get("subject") or "(no subject)"
     body = (email.get("body") or "")[:1500]
 
-    # Isolate email content in XML tags (prompt injection defence)
     user_msg = (
         f"<email>\n"
         f"  <subject>{subject}</subject>\n"
@@ -105,64 +121,33 @@ def run_specialist(
         f"Handle this email according to your workflow."
     )
 
-    client.messages.create(
-        thread_id=thread.id,
-        role="user",
-        content=user_msg,
-    )
+    client.messages.create(thread_id=thread.id, role="user", content=user_msg)
 
-    # Manual tool-call loop — create_and_process uses the client's global
-    # _function_tool for dispatch (set via enable_auto_function_calls), which
-    # is not thread-safe for parallel specialists.  We own the toolset here so
-    # we handle dispatch ourselves.
-    tool_fns = SPECIALIST_TOOLS.get(agent_key, set())
-    local_toolset = ToolSet()
-    if tool_fns:
-        local_toolset.add(FunctionTool(functions=tool_fns))
+    # create_and_process handles the tool-call loop automatically because
+    # make_client registered our functions via enable_auto_function_calls.
+    run = client.runs.create_and_process(thread_id=thread.id, agent_id=agent.id)
 
-    run = client.runs.create(thread_id=thread.id, agent_id=agent.id)
-    while run.status in ("queued", "in_progress", "requires_action"):
-        time.sleep(_POLL_INTERVAL)
-        run = client.runs.get(thread_id=thread.id, run_id=run.id)
-        if run.status == "requires_action":
-            tool_calls = run.required_action.submit_tool_outputs.tool_calls
-            if not tool_calls:
-                break
-            if any(tc.type == "function" for tc in tool_calls):
-                tool_outputs = local_toolset.execute_tool_calls(tool_calls)
-                if tool_outputs:
-                    client.runs.submit_tool_outputs(
-                        thread_id=thread.id, run_id=run.id, tool_outputs=tool_outputs
-                    )
-
-    _content_filtered = False
     if run.status == "incomplete":
         reason = getattr(getattr(run, "incomplete_details", None), "reason", "unknown")
-        if reason == "content_filter":
-            # Azure content filter blocked the model output — use a safe fallback
-            # but still harvest any tool calls that completed before the filter.
-            _content_filtered = True
-        else:
+        if reason != "content_filter":
             raise RuntimeError(
-                f"Specialist run failed: status={run.status}, reason={reason}, "
-                f"error={getattr(run, 'last_error', None)}"
+                f"Specialist run failed: status={run.status}, reason={reason}"
             )
+        # content_filter: fall through with empty reply; fallback applied below
     elif run.status != "completed":
         raise RuntimeError(
             f"Specialist run failed: status={run.status}, "
             f"error={getattr(run, 'last_error', None)}"
         )
 
-    # Extract reply (skip message scan if content filter blocked output)
+    # Extract reply
     reply = ""
-    if not _content_filtered:
-        messages = client.messages.list(thread_id=thread.id)
-        for msg in messages:
+    if run.status == "completed":
+        for msg in client.messages.list(thread_id=thread.id):
             if msg.role == "assistant":
                 for part in msg.content:
                     if hasattr(part, "text"):
                         reply = part.text.value.strip()
-                        # Strip file citation annotations if present
                         if hasattr(part.text, "annotations"):
                             for ann in part.text.annotations:
                                 if hasattr(ann, "text"):
@@ -175,32 +160,21 @@ def run_specialist(
             "support agent will follow up with you shortly."
         )
 
-    # Extract tool calls from run steps
-    tools_called: list[str] = []
-    ticket_id: str | None = None
-    escalated = False
+    # Extract ticket_id from reply text (skill instructions require it there)
+    m = _TICKET_RE.search(reply)
+    ticket_id = m.group(0) if m else None
 
-    run_steps = client.run_steps.list(
-        thread_id=thread.id,
-        run_id=run.id,
-    )
-    for step in run_steps:
+    # Extract tools_called and escalated from run steps (names are available; output is not)
+    tools_called: list[str] = []
+    escalated = False
+    for step in client.run_steps.list(thread_id=thread.id, run_id=run.id):
         if step.type == "tool_calls" and step.step_details:
             for tc in step.step_details.tool_calls:
                 if hasattr(tc, "function"):
-                    fn_name = tc.function.name
-                    tools_called.append(fn_name)
-                    if fn_name == "create_ticket" and tc.function.output:
-                        try:
-                            out = json.loads(tc.function.output)
-                            if "ticket_id" in out:
-                                ticket_id = out["ticket_id"]
-                        except (json.JSONDecodeError, TypeError):
-                            pass
-                    if fn_name == "escalate_to_human":
+                    tools_called.append(tc.function.name)
+                    if tc.function.name == "escalate_to_human":
                         escalated = True
 
-    # Derive a short internal summary from the reply (first sentence)
     internal_summary = reply.split(".")[0].strip() if reply else ""
 
     return SpecialistResult(

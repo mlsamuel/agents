@@ -187,8 +187,8 @@ def send_reply(message: str, ticket_id: str = "") -> str:
 
 # Which Python functions each specialist gets as FunctionTools
 SPECIALIST_TOOLS: dict[str, set] = {
-    "billing": {lookup_customer, check_order_status, process_refund, create_ticket, send_reply, escalate_to_human},
-    "returns": {lookup_customer, check_order_status, process_refund, create_ticket, send_reply},
-    "technical_support": {lookup_customer, get_ticket_history, create_ticket, escalate_to_human, send_reply},
-    "general": {lookup_customer, create_ticket, send_reply},
+    "billing": {lookup_customer, check_order_status, process_refund, create_ticket, escalate_to_human},
+    "returns": {lookup_customer, check_order_status, process_refund, create_ticket},
+    "technical_support": {lookup_customer, get_ticket_history, create_ticket, escalate_to_human},
+    "general": {lookup_customer, create_ticket},
 }

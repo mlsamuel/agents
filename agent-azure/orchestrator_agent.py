@@ -22,10 +22,11 @@ from concurrent.futures import ThreadPoolExecutor, as_completed
 from dataclasses import dataclass
 
 from azure.ai.agents import AgentsClient
+from azure.identity import DefaultAzureCredential
 
 from guardrails import GuardrailError, screen
 from skills import load_skills, select_skill
-from specialist_agents import SpecialistResult, cleanup, create_specialist, run_specialist
+from specialist_agents import SpecialistResult, cleanup, create_specialist, make_client, run_specialist
 from store import guidelines_as_text
 from tracing import setup_tracing
 
@@ -126,20 +127,25 @@ def _decompose(client: AgentsClient, email: dict, classification: dict) -> list[
 # ── Step 2: Fan out ───────────────────────────────────────────────────────────
 
 def _run_one_specialist(
-    client: AgentsClient,
     agent_key: str,
     email: dict,
     classification: dict,
     vector_store_id: str,
     guidelines_text: str,
 ) -> SpecialistResult:
-    """Create, run, and clean up one specialist agent."""
+    """Create, run, and clean up one specialist agent.
+
+    Creates a dedicated AgentsClient so enable_auto_function_calls is
+    isolated per thread when multiple specialists run in parallel.
+    """
     skills = load_skills(agent_key)
-    skill_name, skill_content = select_skill(
+    _, skill_content = select_skill(
         skills, classification.get("type", ""), email.get("subject", "")
     )
+    # Read endpoint lazily so load_dotenv() has already run by call time.
+    client = make_client(os.environ["PROJECT_ENDPOINT"], DefaultAzureCredential(), agent_key)
     agent, thread = create_specialist(
-        client, agent_key, skill_name, skill_content, vector_store_id, guidelines_text
+        client, agent_key, skill_content, vector_store_id, guidelines_text
     )
     try:
         return run_specialist(client, agent, thread, email, classification)
@@ -148,7 +154,6 @@ def _run_one_specialist(
 
 
 def _fan_out(
-    client: AgentsClient,
     agent_keys: list[str],
     email: dict,
     classification: dict,
@@ -158,7 +163,7 @@ def _fan_out(
     """Run specialist agents — parallel if multiple, sequential if one."""
     if len(agent_keys) == 1:
         return [_run_one_specialist(
-            client, agent_keys[0], email, classification,
+            agent_keys[0], email, classification,
             vector_store_id, guidelines_text,
         )]
 
@@ -168,7 +173,7 @@ def _fan_out(
         futures = {
             executor.submit(
                 _run_one_specialist,
-                client, key, email, classification,
+                key, email, classification,
                 vector_store_id, guidelines_text,
             ): i
             for i, key in enumerate(agent_keys)
@@ -252,7 +257,7 @@ def orchestrate(
 
         # Fan out
         with tracer.start_as_current_span("fan_out"):
-            results = _fan_out(client, agent_keys, email, classification, vector_store_id, guidelines_text)
+            results = _fan_out(agent_keys, email, classification, vector_store_id, guidelines_text)
 
         # Merge
         with tracer.start_as_current_span("merge"):

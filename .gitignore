@@ -5,3 +5,4 @@ __pycache__/
 eval_output.md
 notes*.txt
 node_modules/
+pipeline_results.json
