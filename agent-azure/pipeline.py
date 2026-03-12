@@ -42,7 +42,7 @@ EMAILS_CSV = DATA_DIR / "emails.csv"
 def _load_emails(limit: int, offset: int, language: str = "en") -> list[dict]:
     """Load emails from CSV filtered by language, applying offset then limit."""
     if not EMAILS_CSV.exists():
-        raise FileNotFoundError(f"emails.csv not found at {EMAILS_CSV}. Copy from agent-cli/data/.")
+        raise FileNotFoundError(f"emails.csv not found at {EMAILS_CSV}.")
 
     emails = []
     skipped = 0
