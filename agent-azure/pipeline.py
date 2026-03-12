@@ -39,16 +39,20 @@ DATA_DIR = Path(__file__).parent / "data"
 EMAILS_CSV = DATA_DIR / "emails.csv"
 
 
-def _load_emails(limit: int, offset: int) -> list[dict]:
-    """Load emails from CSV. Each row: subject, body, queue, priority, answer."""
+def _load_emails(limit: int, offset: int, language: str = "en") -> list[dict]:
+    """Load emails from CSV filtered by language, applying offset then limit."""
     if not EMAILS_CSV.exists():
         raise FileNotFoundError(f"emails.csv not found at {EMAILS_CSV}. Copy from agent-cli/data/.")
 
     emails = []
+    skipped = 0
     with open(EMAILS_CSV, encoding="utf-8") as f:
         reader = csv.DictReader(f)
-        for i, row in enumerate(reader):
-            if i < offset:
+        for row in reader:
+            if language and row.get("language") != language:
+                continue
+            if skipped < offset:
+                skipped += 1
                 continue
             if len(emails) >= limit:
                 break
@@ -68,8 +72,10 @@ def main() -> None:
                         help="Run LLM-as-judge scoring (default: on)")
     parser.add_argument("--improve", default=True, action=argparse.BooleanOptionalAction,
                         help="Generate and apply improvement proposals (requires --eval, default: on)")
-    parser.add_argument("--limit",   type=int, default=3)
-    parser.add_argument("--offset",  type=int, default=0)
+    parser.add_argument("--limit",    type=int, default=3)
+    parser.add_argument("--offset",   type=int, default=0)
+    parser.add_argument("--language", type=str, default="en",
+                        help="Filter emails by language code (default: en)")
     parser.add_argument("--min-score", type=float, default=4.5,
                         help="Threshold below which improve is triggered (default: 4.5)")
     parser.add_argument("--save",    default=True, action=argparse.BooleanOptionalAction,
@@ -97,7 +103,7 @@ def main() -> None:
         mode_parts.append("IMPROVE")
     mode_tag = "+".join(mode_parts)
 
-    print(f"Pipeline starting — {args.limit} email(s)"
+    print(f"Pipeline starting — {args.limit} email(s), language={args.language}"
           f"{' [' + mode_tag + ']' if mode_tag else ''}")
     print("=" * 70)
 
@@ -105,7 +111,7 @@ def main() -> None:
     if args.eval and args.save:
         init_output(out_path)
 
-    emails = _load_emails(args.limit, args.offset)
+    emails = _load_emails(args.limit, args.offset, args.language)
     output_sections: list[dict] = []
 
     skill_map = all_skills() if args.improve else {}
