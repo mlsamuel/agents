@@ -1,9 +1,12 @@
-"""One-time script to upload the customer support knowledge base to an Azure vector store.
+"""Knowledge base setup and update for the agent-azure pipeline.
 
-Run once before kb_agent.py:
+Initial setup (run once):
     python kb_setup.py
+    Prints VECTOR_STORE_ID — copy into your .env file.
 
-Copy the printed VECTOR_STORE_ID into your .env file.
+Called programmatically by improver.py after KB entries are added:
+    from kb_setup import update_kb
+    update_kb(vector_store_id)
 """
 import json
 import os
@@ -77,6 +80,31 @@ def main() -> None:
 
     print("\n✓ Done. Add this to your .env:")
     print(f"\n  VECTOR_STORE_ID={vector_store.id}\n")
+
+
+def update_kb(vector_store_id: str) -> None:
+    """Re-upload the current knowledge_base.json to an existing vector store.
+
+    Called by improver.py after new KB entries are added.
+    Uploads a fresh file and attaches it, replacing the previous upload.
+    """
+    client = AgentsClient(
+        endpoint=os.environ["PROJECT_ENDPOINT"],
+        credential=DefaultAzureCredential(),
+    )
+
+    kb_markdown = build_markdown()
+    kb_bytes = kb_markdown.encode("utf-8")
+
+    uploaded = client.files.upload(
+        file=("knowledge_base.md", kb_bytes),
+        purpose="assistants",
+    )
+
+    client.vector_store_files.create_and_poll(
+        vector_store_id=vector_store_id,
+        file_id=uploaded.id,
+    )
 
 
 if __name__ == "__main__":

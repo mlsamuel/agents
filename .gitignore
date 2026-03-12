@@ -3,5 +3,5 @@
 __pycache__/
 *.pyc
 eval_output.md
-notes.txt
+notes*.txt
 node_modules/
