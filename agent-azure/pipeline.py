@@ -13,6 +13,7 @@ Usage:
 import argparse
 import csv
 import os
+from dataclasses import dataclass
 from pathlib import Path
 
 from logger import get_logger  # must be first — silences third-party loggers
@@ -20,10 +21,10 @@ from dotenv import load_dotenv
 from azure.ai.agents import AgentsClient
 from azure.identity import DefaultAzureCredential
 
-from classifier import classify
-from evaluator import append_section, init_output, judge
+from classifier import classify, create_agent as create_classifier_agent
+from evaluator import append_section, init_output, judge, create_agent as create_judge_agent
 from guardrails import GuardrailError
-from improver import apply_proposals, generate_proposals
+from improver import apply_proposals, create_agents as create_improver_agents, generate_proposals
 from orchestrator_agent import orchestrate
 from skills import all_skills, rollback
 from store import (
@@ -33,6 +34,34 @@ from store import (
     get_training,
 )
 from tracing import setup_tracing
+
+
+@dataclass
+class _AgentPool:
+    classifier: object
+    judge: object
+    improver: object
+    kb_merger: object
+    guideline_merger: object
+
+
+def _create_pool(client: AgentsClient) -> _AgentPool:
+    imp, kb, gl = create_improver_agents(client)
+    return _AgentPool(
+        classifier=create_classifier_agent(client),
+        judge=create_judge_agent(client),
+        improver=imp,
+        kb_merger=kb,
+        guideline_merger=gl,
+    )
+
+
+def _delete_pool(client: AgentsClient, pool: _AgentPool) -> None:
+    for agent in (pool.classifier, pool.judge, pool.improver, pool.kb_merger, pool.guideline_merger):
+        try:
+            client.delete_agent(agent.id)
+        except Exception:
+            pass
 
 load_dotenv(Path(__file__).parent / ".env")
 
@@ -95,7 +124,7 @@ def _log_steps(r) -> None:
                       s["step"], "file_search", s["files"])
 
 
-def _run_email(client, email, i, args, vector_store_id, tracer, out_path) -> tuple[dict | None, dict]:
+def _run_email(client, email, i, args, vector_store_id, tracer, out_path, pool: _AgentPool) -> tuple[dict | None, dict]:
     """Classify, orchestrate, eval one email.
 
     Returns (section, classification).
@@ -112,7 +141,7 @@ def _run_email(client, email, i, args, vector_store_id, tracer, out_path) -> tup
 
         # Classify
         with tracer.start_as_current_span("pipeline.classify") as cls_span:
-            classification = classify(client, email)
+            classification = classify(client, email, agent=pool.classifier)
             cls_span.set_attribute("classification.queue", classification["queue"])
             cls_span.set_attribute("classification.priority", classification["priority"])
             cls_span.set_attribute("classification.type", classification["type"])
@@ -160,7 +189,7 @@ def _run_email(client, email, i, args, vector_store_id, tracer, out_path) -> tup
             return None, classification
 
         with tracer.start_as_current_span("eval") as eval_span:
-            scores = judge(client, email, ground_truth, generated)
+            scores = judge(client, email, ground_truth, generated, agent=pool.judge)
             avg = scores["avg"]
             eval_span.set_attribute("eval.avg", avg)
             eval_span.set_attribute("eval.action", scores["action"])
@@ -195,7 +224,7 @@ def _run_email(client, email, i, args, vector_store_id, tracer, out_path) -> tup
 
 
 def _run_improve(
-    client, section, classification, skill_map, tally, vector_store_id, tracer
+    client, section, classification, skill_map, tally, vector_store_id, tracer, pool: _AgentPool
 ) -> dict:
     """Propose, apply, and regression-check improvements. Returns updated skill_map."""
     skill_name = section["skills"].split(",")[0].strip()
@@ -204,7 +233,7 @@ def _run_improve(
 
     try:
         with tracer.start_as_current_span("improve") as imp_span:
-            proposals = generate_proposals(client, skill_name, skill_info, section)
+            proposals = generate_proposals(client, skill_name, skill_info, section, agent=pool.improver)
             imp_span.set_attribute("proposals.count", len(proposals))
             print(f"  [improve]      {len(proposals)} proposal(s)")
             for p in proposals:
@@ -212,7 +241,11 @@ def _run_improve(
                 print(f"     {p['type'].upper():14}  {target}  — {p['rationale'][:80]}")
 
             if proposals:
-                apply_proposals(client, proposals, vector_store_id)
+                apply_proposals(
+                    client, proposals, vector_store_id,
+                    kb_merger_agent=pool.kb_merger,
+                    guideline_merger_agent=pool.guideline_merger,
+                )
                 skill_map = all_skills()
                 for p in proposals:
                     if p["type"] in tally:
@@ -224,11 +257,11 @@ def _run_improve(
                 failures = []
                 for te in training_emails:
                     te_email = {"subject": te["subject"], "body": te["body"]}
-                    te_cls = classify(client, te_email)
+                    te_cls = classify(client, te_email, agent=pool.classifier)
                     te_result = orchestrate(client, te_email, te_cls, vector_store_id, tracer)
                     te_generated = te_result.final_reply or ""
                     if te_generated:
-                        te_scores = judge(client, te_email, te["answer"], te_generated)
+                        te_scores = judge(client, te_email, te["answer"], te_generated, agent=pool.judge)
                         if te_scores["avg"] < REGRESSION_THRESHOLD:
                             failures.append({"subject": te["subject"], "avg": te_scores["avg"]})
                 if failures:
@@ -338,28 +371,32 @@ def main() -> None:
         "training_added": 0,
     }
 
-    for i, email in enumerate(emails, args.offset + 1):
-        try:
-            section, classification = _run_email(
-                client, email, i, args, vector_store_id, tracer, out_path
-            )
-        except GuardrailError as e:
-            print(f"  [guardrail]    BLOCKED — {e}")
-            print("=" * 70)
-            continue
-        except Exception as exc:
-            print(f"  [error]        {exc}")
-            print("=" * 70)
-            continue
-
-        if section is not None:
-            output_sections.append(section)
-            if args.improve and section["avg"] < args.min_score:
-                skill_map = _run_improve(
-                    client, section, classification, skill_map, tally, vector_store_id, tracer
+    pool = _create_pool(client)
+    try:
+        for i, email in enumerate(emails, args.offset + 1):
+            try:
+                section, classification = _run_email(
+                    client, email, i, args, vector_store_id, tracer, out_path, pool
                 )
+            except GuardrailError as e:
+                print(f"  [guardrail]    BLOCKED — {e}")
+                print("=" * 70)
+                continue
+            except Exception as exc:
+                print(f"  [error]        {exc}")
+                print("=" * 70)
+                continue
 
-        print("=" * 70)
+            if section is not None:
+                output_sections.append(section)
+                if args.improve and section["avg"] < args.min_score:
+                    skill_map = _run_improve(
+                        client, section, classification, skill_map, tally, vector_store_id, tracer, pool
+                    )
+
+            print("=" * 70)
+    finally:
+        _delete_pool(client, pool)
 
     _print_summary(output_sections, tally, args, out_path)
 

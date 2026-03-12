@@ -131,9 +131,26 @@ Respond with JSON only, no markdown:
 {"category": "...", "topic": "...", "trigger": "...", "instruction": "...", "keywords": [...]}"""
 
 
-def _call_agent(client: AgentsClient, system: str, user_msg: str, model: str = IMPROVE_MODEL) -> str:
-    """Create a single-turn Foundry agent call and return the text response."""
-    agent = client.create_agent(model=model, name="improver", instructions=system)
+def create_agents(client: AgentsClient) -> tuple:
+    """Create the three reusable improver agents. Caller is responsible for deleting them.
+
+    Returns (improver_agent, kb_merger_agent, guideline_merger_agent).
+    """
+    improver          = client.create_agent(model=IMPROVE_MODEL, name="improver",          instructions=IMPROVE_SYSTEM)
+    kb_merger         = client.create_agent(model=MERGE_MODEL,   name="kb-merger",         instructions=MERGE_KB_SYSTEM)
+    guideline_merger  = client.create_agent(model=MERGE_MODEL,   name="guideline-merger",  instructions=MERGE_GUIDELINE_SYSTEM)
+    return improver, kb_merger, guideline_merger
+
+
+def _call_agent(client: AgentsClient, system: str, user_msg: str, model: str = IMPROVE_MODEL, agent=None) -> str:
+    """Run a single-turn agent call and return the text response.
+
+    If agent is provided it is reused (not deleted after the call).
+    If agent is None a temporary agent is created and deleted automatically.
+    """
+    _owned = agent is None
+    if _owned:
+        agent = client.create_agent(model=model, name="improver", instructions=system)
     thread = client.threads.create()
     try:
         client.messages.create(thread_id=thread.id, role="user", content=user_msg)
@@ -147,7 +164,8 @@ def _call_agent(client: AgentsClient, system: str, user_msg: str, model: str = I
                         return part.text.value.strip()
     finally:
         client.threads.delete(thread.id)
-        client.delete_agent(agent.id)
+        if _owned:
+            client.delete_agent(agent.id)
     return ""
 
 
@@ -164,6 +182,7 @@ def generate_proposals(
     skill_name: str,
     skill_info: dict | None,
     record: dict,
+    agent=None,
 ) -> list[dict]:
     """Generate improvement proposals for a failing email record."""
     if skill_info:
@@ -196,7 +215,7 @@ def generate_proposals(
         f"Propose improvements. Respond with JSON only."
     )
 
-    raw = _call_agent(client, IMPROVE_SYSTEM, user_msg, model=IMPROVE_MODEL)
+    raw = _call_agent(client, IMPROVE_SYSTEM, user_msg, model=IMPROVE_MODEL, agent=agent)
     raw = _strip_fences(raw)
     data = json.loads(raw)
     proposals = data.get("proposals", [])
@@ -207,13 +226,13 @@ def generate_proposals(
 
 # ── Apply ─────────────────────────────────────────────────────────────────────
 
-def _merge_kb_entries(client: AgentsClient, existing: dict, proposed: dict) -> dict:
+def _merge_kb_entries(client: AgentsClient, existing: dict, proposed: dict, agent=None) -> dict:
     user_msg = (
         f"Existing entry:\n{json.dumps(existing, indent=2)}\n\n"
         f"Proposed entry:\n{json.dumps(proposed, indent=2)}\n\n"
         f"Merge these. Keep category={existing['category']!r}."
     )
-    raw = _call_agent(client, MERGE_KB_SYSTEM, user_msg, model=MERGE_MODEL)
+    raw = _call_agent(client, MERGE_KB_SYSTEM, user_msg, model=MERGE_MODEL, agent=agent)
     raw = _strip_fences(raw)
     merged = json.loads(raw)
     merged["category"] = existing["category"]
@@ -221,13 +240,13 @@ def _merge_kb_entries(client: AgentsClient, existing: dict, proposed: dict) -> d
     return merged
 
 
-def _merge_guideline_entries(client: AgentsClient, existing: dict, proposed: dict) -> dict:
+def _merge_guideline_entries(client: AgentsClient, existing: dict, proposed: dict, agent=None) -> dict:
     user_msg = (
         f"Existing entry:\n{json.dumps(existing, indent=2)}\n\n"
         f"Proposed entry:\n{json.dumps(proposed, indent=2)}\n\n"
         f"Merge these. Keep category={existing['category']!r}."
     )
-    raw = _call_agent(client, MERGE_GUIDELINE_SYSTEM, user_msg, model=MERGE_MODEL)
+    raw = _call_agent(client, MERGE_GUIDELINE_SYSTEM, user_msg, model=MERGE_MODEL, agent=agent)
     raw = _strip_fences(raw)
     merged = json.loads(raw)
     merged["category"] = existing["category"]
@@ -255,7 +274,7 @@ def _apply_skill(p: dict) -> None:
         print(f"  New skill created: {skill_name}")
 
 
-def _apply_kb_entry(client: AgentsClient, p: dict, vector_store_id: str) -> None:
+def _apply_kb_entry(client: AgentsClient, p: dict, vector_store_id: str, agent=None) -> None:
     """Add or merge a kb_entry and re-upload the affected category to the vector store."""
     entry = p["entry"]
     kb_entries: list[dict] = json.loads(_KB_PATH.read_text(encoding="utf-8"))
@@ -266,7 +285,7 @@ def _apply_kb_entry(client: AgentsClient, p: dict, vector_store_id: str) -> None
     )
     if existing:
         print(f"  KB merge: '{entry.get('topic')}' ~ '{existing['topic']}'")
-        merged = _merge_kb_entries(client, existing, entry)
+        merged = _merge_kb_entries(client, existing, entry, agent=agent)
         existing.update(merged)
         print(f"  KB entry merged: {merged.get('topic', '')}")
     else:
@@ -282,7 +301,7 @@ def _apply_kb_entry(client: AgentsClient, p: dict, vector_store_id: str) -> None
         print(f"  KB upload failed: {exc}")
 
 
-def _apply_guideline(client: AgentsClient, p: dict, vector_store_id: str) -> None:
+def _apply_guideline(client: AgentsClient, p: dict, vector_store_id: str, agent=None) -> None:
     """Add or merge an agent_guideline and re-upload guidelines to the vector store."""
     entry = p["entry"]
     guidelines = store.load_guidelines()
@@ -293,7 +312,7 @@ def _apply_guideline(client: AgentsClient, p: dict, vector_store_id: str) -> Non
     )
     if existing:
         print(f"  Guideline merge: '{entry.get('topic')}' ~ '{existing['topic']}'")
-        merged = _merge_guideline_entries(client, existing, entry)
+        merged = _merge_guideline_entries(client, existing, entry, agent=agent)
         existing.update(merged)
         store.save_guidelines(guidelines)
         print(f"  Guideline merged: {merged.get('topic', '')}")
@@ -312,6 +331,8 @@ def apply_proposals(
     client: AgentsClient,
     proposals: list[dict],
     vector_store_id: str,
+    kb_merger_agent=None,
+    guideline_merger_agent=None,
 ) -> None:
     """Apply improvement proposals to skills, KB, and guidelines."""
     for p in proposals:
@@ -322,8 +343,8 @@ def apply_proposals(
             if ptype in ("skill_edit", "new_skill"):
                 _apply_skill(p)
             elif ptype == "kb_entry":
-                _apply_kb_entry(client, p, vector_store_id)
+                _apply_kb_entry(client, p, vector_store_id, agent=kb_merger_agent)
             elif ptype == "agent_guideline":
-                _apply_guideline(client, p, vector_store_id)
+                _apply_guideline(client, p, vector_store_id, agent=guideline_merger_agent)
         except Exception as exc:
             print(f"  apply {ptype} failed: {exc} — skipping")

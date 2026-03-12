@@ -43,8 +43,22 @@ comment should be one short sentence about the biggest gap (or "none" if all goo
 
 
 
-def judge(client: AgentsClient, email: dict, ground_truth: str, generated: str) -> dict:
-    """Score the generated reply against the ground truth. Returns scores dict."""
+def create_agent(client: AgentsClient):
+    """Create the reusable judge agent. Caller is responsible for deleting it."""
+    return client.create_agent(
+        model=MODEL,
+        name="eval-judge",
+        instructions=JUDGE_SYSTEM,
+        response_format=AgentsResponseFormat(type="json_object"),
+    )
+
+
+def judge(client: AgentsClient, email: dict, ground_truth: str, generated: str, agent=None) -> dict:
+    """Score the generated reply against the ground truth. Returns scores dict.
+
+    If agent is provided it is reused (not deleted after the call).
+    If agent is None a temporary agent is created and deleted automatically.
+    """
     subject = email.get("subject") or "(no subject)"
     body = (email.get("body") or "")[:800]
     gt = ground_truth[:600]
@@ -56,12 +70,9 @@ def judge(client: AgentsClient, email: dict, ground_truth: str, generated: str) 
         f"GENERATED REPLY\n{gen}"
     )
 
-    agent = client.create_agent(
-        model=MODEL,
-        name="eval-judge",
-        instructions=JUDGE_SYSTEM,
-        response_format=AgentsResponseFormat(type="json_object"),
-    )
+    _owned = agent is None
+    if _owned:
+        agent = create_agent(client)
     thread = client.threads.create()
     try:
         client.messages.create(thread_id=thread.id, role="user", content=user_msg)
@@ -79,7 +90,8 @@ def judge(client: AgentsClient, email: dict, ground_truth: str, generated: str) 
                 break
     finally:
         client.threads.delete(thread.id)
-        client.delete_agent(agent.id)
+        if _owned:
+            client.delete_agent(agent.id)
 
     try:
         scores = json.loads(raw)

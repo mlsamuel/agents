@@ -49,17 +49,28 @@ _QUEUE_TO_AGENT: dict[str, str] = {
 }
 
 
-def classify(client: AgentsClient, email: dict) -> dict:
-    """Classify an email and return classification dict including agent_key."""
-    subject = email.get("subject") or "(no subject)"
-    body = (email.get("body") or "")[:1500]
-
-    agent = client.create_agent(
+def create_agent(client: AgentsClient):
+    """Create the reusable classifier agent. Caller is responsible for deleting it."""
+    return client.create_agent(
         model=MODEL,
         name="email-classifier",
         instructions=SYSTEM_PROMPT,
         response_format=AgentsResponseFormat(type="json_object"),
     )
+
+
+def classify(client: AgentsClient, email: dict, agent=None) -> dict:
+    """Classify an email and return classification dict including agent_key.
+
+    If agent is provided it is reused (not deleted after the call).
+    If agent is None a temporary agent is created and deleted automatically.
+    """
+    subject = email.get("subject") or "(no subject)"
+    body = (email.get("body") or "")[:1500]
+
+    _owned = agent is None
+    if _owned:
+        agent = create_agent(client)
     thread = client.threads.create()
     try:
         client.messages.create(
@@ -82,7 +93,8 @@ def classify(client: AgentsClient, email: dict) -> dict:
                 break
     finally:
         client.threads.delete(thread.id)
-        client.delete_agent(agent.id)
+        if _owned:
+            client.delete_agent(agent.id)
 
     try:
         result = json.loads(raw)
