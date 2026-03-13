@@ -104,5 +104,270 @@
       "data systems",
       "upgrade proposal"
     ]
+  },
+  {
+    "category": "technical_support",
+    "topic": "Request specific error messages",
+    "trigger": "When users report technical issues without detailed information",
+    "instruction": "Always ask for specific error messages and details about the issue to facilitate troubleshooting.",
+    "keywords": [
+      "error messages",
+      "technical issues",
+      "troubleshooting"
+    ]
+  },
+  {
+    "category": "technical_support",
+    "topic": "Clarify before troubleshooting",
+    "trigger": "When an email describes a technical problem but lacks essential context",
+    "instruction": "Request additional context or specifics about the user's current system and troubleshooting steps already taken.",
+    "keywords": [
+      "clarifying questions",
+      "context",
+      "system details"
+    ]
+  },
+  {
+    "category": "technical_support",
+    "topic": "Schedule calls for complex issues",
+    "trigger": "When the issue described is complex and requires collaboration with the user",
+    "instruction": "Offer to schedule a call to discuss the issue further to provide tailored assistance.",
+    "keywords": [
+      "schedule call",
+      "collaborate",
+      "assistance"
+    ]
+  },
+  {
+    "category": "technical_support",
+    "topic": "Gather information on recent updates",
+    "trigger": "When users mention problems following recent software or system updates",
+    "instruction": "Request details on the recent updates and the impact these updates may have had on their current issues.",
+    "keywords": [
+      "recent updates",
+      "software compatibility",
+      "system issues"
+    ]
+  },
+  {
+    "category": "technical_support",
+    "topic": "Evaluate urgency of security incidents",
+    "trigger": "When users report unauthorized access or security breaches",
+    "instruction": "Prioritize responses and gather information about the security incident quickly to mitigate risks.",
+    "keywords": [
+      "security incident",
+      "unauthorized access",
+      "risk mitigation"
+    ]
+  },
+  {
+    "category": "technical_support",
+    "topic": "Inquire about troubleshooting efforts",
+    "trigger": "When users report an issue but do not mention any troubleshooting they have attempted",
+    "instruction": "Always ask if any troubleshooting steps have been taken so far to better understand the situation.",
+    "keywords": [
+      "troubleshooting steps",
+      "user efforts",
+      "issue understanding"
+    ]
+  },
+  {
+    "category": "billing",
+    "topic": "Request Specific Details for Discrepancies",
+    "trigger": "Customer reports billing discrepancies or issues",
+    "instruction": "Always ask for specific details such as account number, transaction dates, and amounts involved to better investigate the problem.",
+    "keywords": [
+      "billing discrepancies",
+      "account number",
+      "transaction details"
+    ]
+  },
+  {
+    "category": "billing",
+    "topic": "Clarify before Escalating Billing Issues",
+    "trigger": "Customer indicates urgency in billing issues without specific details",
+    "instruction": "Request additional specific information regarding the discrepancies or errors before considering escalation.",
+    "keywords": [
+      "urgent billing issue",
+      "request information",
+      "clarify details"
+    ]
+  },
+  {
+    "category": "returns",
+    "topic": "Escalate for System-Wide Issues",
+    "trigger": "Multiple users report problems with data across platforms.",
+    "instruction": "Escalate the issue if it is affecting numerous users to ensure prompt attention and resolution.",
+    "keywords": [
+      "escalate",
+      "system-wide",
+      "issues",
+      "multiple users",
+      "attention"
+    ]
+  },
+  {
+    "category": "billing",
+    "topic": "Invite Discussion for Complex Issues",
+    "trigger": "Customer inquiries about billing features or seeks clarification on complex billing matters",
+    "instruction": "Offer to schedule a call or detailed discussion to clarify billing options, features, and potential discounts.",
+    "keywords": [
+      "billing features",
+      "schedule call",
+      "discussion"
+    ]
+  },
+  {
+    "category": "billing",
+    "topic": "Proactive Communication for Resolution",
+    "trigger": "Acknowledgment of billing discrepancies with ongoing updates",
+    "instruction": "Communicate to the customer regularly about the status of their issue and expected resolution times to maintain trust.",
+    "keywords": [
+      "proactive communication",
+      "status updates",
+      "maintain trust"
+    ]
+  },
+  {
+    "category": "billing",
+    "topic": "Multiple Billing Inquiries Response",
+    "trigger": "Customer inquires about various billing plans or options",
+    "instruction": "Provide a comprehensive overview of available plans and pricing structures, including promotional or long-term commitment discounts.",
+    "keywords": [
+      "billing plans",
+      "pricing overview",
+      "discounts"
+    ]
+  },
+  {
+    "category": "returns",
+    "topic": "Request Specific Metrics for Engagement Issues",
+    "trigger": "Customer reports decline in digital engagement metrics.",
+    "instruction": "Ask for specific metrics and timeframes related to the decline to better assist with solutions.",
+    "keywords": [
+      "engagement",
+      "metrics",
+      "decline",
+      "customer support",
+      "solutions"
+    ]
+  },
+  {
+    "category": "returns",
+    "topic": "Clarify Before Rescheduling Calls",
+    "trigger": "Customer exhibits issues with marketing strategies and requests a call.",
+    "instruction": "Clarify specific details about current strategies before scheduling a call to ensure effective discussion.",
+    "keywords": [
+      "clarification",
+      "scheduling",
+      "marketing strategies",
+      "customer call",
+      "details"
+    ]
+  },
+  {
+    "category": "returns",
+    "topic": "Gather Information on Marketing Adjustments",
+    "trigger": "Customer mentions adjustments made to marketing campaigns.",
+    "instruction": "Request details on specific adjustments and their expected outcomes to provide targeted assistance.",
+    "keywords": [
+      "marketing",
+      "adjustments",
+      "outcomes",
+      "assistance",
+      "customer support"
+    ]
+  },
+  {
+    "category": "returns",
+    "topic": "Confirm Details Before Investigating Returns",
+    "trigger": "Customer raises issue with high product return rates.",
+    "instruction": "Confirm details surrounding the returns to identify patterns or specific issues that need addressing.",
+    "keywords": [
+      "returns",
+      "confirmation",
+      "customer issues",
+      "patterns",
+      "investigation"
+    ]
+  },
+  {
+    "category": "returns",
+    "topic": "Request Technical Specifications for Integration",
+    "trigger": "Customer inquires about integration for returns process improvements.",
+    "instruction": "Request detailed technical specifications or current processes related to integration to provide relevant assistance.",
+    "keywords": [
+      "integration",
+      "discrepancies",
+      "technical specifications",
+      "returns process",
+      "assistance"
+    ]
+  },
+  {
+    "category": "general",
+    "topic": "Request Specific Information on Issues",
+    "trigger": "When the email describes a technical issue or challenge",
+    "instruction": "Ask for specific error messages and details on troubleshooting efforts to tailor support.",
+    "keywords": [
+      "error messages",
+      "troubleshooting",
+      "technical issue"
+    ]
+  },
+  {
+    "category": "general",
+    "topic": "Clarify Before Providing Solutions",
+    "trigger": "When the customer's request involves complex strategies or significant changes",
+    "instruction": "Ask clarifying questions about the customer's specific strategies and current practices before suggesting solutions.",
+    "keywords": [
+      "clarifying questions",
+      "customer strategies",
+      "specific practices"
+    ]
+  },
+  {
+    "category": "general",
+    "topic": "Schedule Calls for Detailed Discussions",
+    "trigger": "When the matter involves complex issues that require in-depth discussion",
+    "instruction": "Invite the customer to schedule a call for further discussion and detailed assistance.",
+    "keywords": [
+      "schedule call",
+      "in-depth discussion",
+      "further assistance"
+    ]
+  },
+  {
+    "category": "general",
+    "topic": "Acknowledge Urgent Issues Promptly",
+    "trigger": "When the customer reports an urgent issue that may impact operations",
+    "instruction": "Acknowledge receipt of the urgent issue, express understanding, and confirm actions being taken.",
+    "keywords": [
+      "urgent issues",
+      "acknowledge",
+      "confirm actions"
+    ]
+  },
+  {
+    "category": "general",
+    "topic": "Follow Up on Previous Efforts",
+    "trigger": "When customers report issues they have tried to resolve through previous actions",
+    "instruction": "Inquire about the steps the customer has already taken to show engagement and provide targeted support.",
+    "keywords": [
+      "follow up",
+      "previous efforts",
+      "targeted support"
+    ]
+  },
+  {
+    "category": "general",
+    "topic": "Request Clarifications on Target Audience and Metrics",
+    "trigger": "When customers discuss low engagement or performance issues",
+    "instruction": "Ask for specific details about the target audience, demographics, and performance metrics to provide tailored recommendations.",
+    "keywords": [
+      "target audience",
+      "performance metrics",
+      "tailored recommendations"
+    ]
   }
 ]
