@@ -1,6 +1,6 @@
-# Customer Support Agent Pipeline — OpenAI Assistants + SFT
+# Customer Support Agent Pipeline — OpenAI + SFT
 
-A multi-agent customer support pipeline built on the OpenAI Assistants API, extended with
+A multi-agent customer support pipeline built on the OpenAI APIs, extended with
 Supervised Fine-Tuning (SFT) to bake agent behaviour guidelines into model weights.
 
 ## Architecture
@@ -44,17 +44,17 @@ emails.csv (en only)
 sft/generate_guidelines.py  ← GPT-4o extracts behavioural guidelines from email examples
     │                          merges into data/agent_guidelines.json
     ▼
-sft/generate_dataset.py     ← stratified sample: 100 train + 20 eval (25+5 per domain)
+sft/generate_dataset.py     ← stratified sample: ~160 train + 20 eval (40+5 per domain, quality-filtered)
     │                          system = KB (domain-filtered) + all guidelines
     │                          assistant = ground-truth answer from emails.csv
     ▼
 sft/fine_tune.py            ← uploads train.jsonl, starts gpt-4o-mini SFT job, polls to completion
     │                          saves model ID to data/sft/model_id.txt
     ▼
-sft/evaluate.py             ← both models use Assistants + file_search for KB retrieval
+sft/evaluate.py             ← both models use Responses API + file_search for KB retrieval
                                base: file_search + guidelines in system prompt
                                fine-tuned: file_search only (no guidelines in prompt)
-                               LLM judge scores both; prints comparison table
+                               LLM judge scores both; writes eval_report.md after every example
 ```
 
 **What fine-tuning proves:** If the fine-tuned model matches the base model's scores
@@ -65,11 +65,12 @@ the behavioural patterns. KB retrieval still happens at runtime via `file_search
 
 | Pattern | Where |
 |---|---|
+| Responses API with `file_search` + structured output | `sft/evaluate.py` |
 | Function tools with manual dispatch loop | `specialist_agents.py`, `agent_utils.py` |
 | `file_search` + vector store (managed RAG) | `specialist_agents.py`, `kb_setup.py` |
 | `response_format=json_object` (structured output) | `classifier.py`, `evaluator.py` |
 | Chat Completions for stateless calls | `classifier.py`, `evaluator.py`, `improver.py` |
-| Assistants API for stateful agent runs | `specialist_agents.py`, `sft/evaluate.py` |
+| Assistants API for stateful agent runs with tools | `specialist_agents.py` |
 | `openai.moderations` input/output guardrails | `guardrails.py` |
 | Supervised Fine-Tuning (SFT) | `sft/` |
 | OpenTelemetry tracing → console / OTLP | `tracing.py` |
@@ -122,7 +123,8 @@ python sft/generate_guidelines.py
 
 ```bash
 python sft/generate_dataset.py
-# writes data/sft/train.jsonl (100 examples) + data/sft/eval.jsonl (20 examples)
+# writes data/sft/train.jsonl (~160 examples) + data/sft/eval.jsonl (20 examples)
+# filters out short, JSON-formatted, or PII-placeholder answers automatically
 # prints estimated training tokens and cost
 ```
 
@@ -139,8 +141,9 @@ python sft/fine_tune.py
 
 ```bash
 python sft/evaluate.py
-# runs 20 held-out examples through both models using Assistants + file_search
-# prints comparison table, saves data/sft/eval_report.md
+# runs 20 held-out examples through both models using Responses API + file_search
+# prints per-example scores, writes data/sft/eval_report.md after every example
+# report includes actual replies for eyeballing quality
 ```
 
 ## Key files
@@ -236,17 +239,24 @@ Each example includes:
 - User: email subject + body
 - Assistant: ground-truth answer from the dataset
 
-The KB in the system prompt during training mirrors what file_search retrieves at inference,
+The KB in the system prompt during training mirrors what `file_search` retrieves at inference,
 so the model learns to use retrieved context consistently.
 
-**Cost estimate (100 training examples on gpt-4o-mini-2024-07-18):**
-~500K characters → ~125K tokens → ~$0.50 at $0.004/1K training tokens.
-Varies with guideline count and KB entries included.
+Training examples are filtered automatically: answers shorter than 80 characters, JSON-formatted
+responses, and answers containing raw PII placeholders (e.g. `<name>`, `<tel_num>`) are excluded
+to prevent noise from polluting the training signal.
+
+**Cost estimate (~160 training examples on gpt-4o-mini-2024-07-18):**
+~640K tokens × 3 epochs × $0.003/1K = ~$5.76 per run.
+Pricing: training $0.003/1K tokens · inference input $0.0003/1K · inference output $0.0012/1K.
+Costs scale with epoch count and total context length (KB + guidelines in each example can be long).
+Check the OpenAI dashboard after each job for the exact amount.
 
 ## Logging and tracing
 
 Set `OTLP_ENDPOINT` to route traces to a collector (Jaeger, Grafana Tempo, etc.).
-Without it, traces are emitted to the console via BatchSpanProcessor.
+Without it, set `TRACING=true` in `.env` to emit spans to the console, or `TRACING=false`
+(the default) to suppress console output while still recording spans internally.
 
 OpenTelemetry span hierarchy:
 ```

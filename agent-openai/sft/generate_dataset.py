@@ -210,12 +210,13 @@ def main() -> None:
         for m in ex["messages"]
     )
     est_tokens = total_chars // 4
-    # gpt-4o-mini SFT: ~$0.004 per 1K training tokens (as of 2024)
-    est_cost = est_tokens / 1000 * 0.004
 
     print(f"\nTrain: {len(train_examples)} examples → {train_path}")
     print(f"Eval:  {len(eval_examples)} examples → {eval_path}")
-    print(f"Estimated training tokens: ~{est_tokens:,}  (~${est_cost:.2f})")
+    # $0.003 per 1K tokens per epoch (gpt-4o-mini-2024-07-18, as of 2025)
+    est_cost_per_epoch = est_tokens / 1000 * 0.003
+    print(f"Estimated training tokens: ~{est_tokens:,}  "
+          f"(~${est_cost_per_epoch:.2f}/epoch · ~${est_cost_per_epoch * 3:.2f} for 3 epochs)")
 
 
 if __name__ == "__main__":
