@@ -6,7 +6,7 @@ Produces two JSONL files in OpenAI fine-tuning format:
   data/sft/eval.jsonl   — 20 examples  (5 per domain, held out, no overlap with train)
 
 Each example:
-  system:    "You are a customer support specialist..." + relevant KB entries + all guidelines
+  system:    base instructions + domain KB entries + all guidelines
   user:      email subject + body
   assistant: ground-truth answer from emails.csv
 
@@ -14,6 +14,10 @@ The system prompt includes:
   - KB entries for the email's domain (simulates retrieval — keeps context manageable)
   - All agent guidelines (these will be ABSENT from the fine-tuned model's inference prompt
     to prove the model learned them during training)
+
+At inference, file_search retrieves KB from the vector store — same content, same position
+in context (before the email). The fine-tuned model is tested without guidelines to verify
+they were baked into weights.
 
 Run after generate_guidelines.py:
     python sft/generate_dataset.py
@@ -114,7 +118,6 @@ def _make_example(email: dict, domain: str, kb_context: str, guidelines_md: str)
         system_parts.append(f"\n## Knowledge Base\n\n{kb_context}")
     if guidelines_md:
         system_parts.append(f"\n## Agent Behaviour Guidelines\n\n{guidelines_md}")
-
     system = "\n".join(system_parts)
     user   = f"Subject: {email['subject']}\n\n{email['body']}"
     return {
