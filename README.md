@@ -31,3 +31,11 @@ Eval results and the escalation review UI are viewable as a [static showcase](ht
 A customer support agent system built on Azure AI Foundry. Demonstrates Azure-native patterns: `AgentsClient` with persistent threads, `FileSearchTool` for managed RAG (no local embedding model), `ConnectedAgentTool` for multi-agent orchestration, Azure AI Content Safety guardrails on input and output, and OpenTelemetry traces + logs routed to Application Insights via `configure_azure_monitor()`.
 
 **Platform:** Azure AI Foundry (GPT-4o, Azure File Search vector store, Azure AI Content Safety)
+
+### [agent-openai](agent-openai/)
+
+The same pipeline built directly on the OpenAI APIs, extended with Supervised Fine-Tuning (SFT) to bake agent behaviour guidelines into model weights. Demonstrates the full SFT lifecycle: dataset generation with quality filtering, fine-tuning job management, and automated evaluation comparing the fine-tuned model against the base model using the Responses API as judge.
+
+**Transport:** in-process (OpenAI Assistants API with `file_search` + function tools for specialist agents)
+
+**SFT:** `gpt-4o-mini-2024-07-18` fine-tuned to follow behaviour guidelines without needing them in the inference prompt — verified by `sft/evaluate.py` which scores both models side-by-side on 20 held-out examples.
