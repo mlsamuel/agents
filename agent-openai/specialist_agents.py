@@ -102,7 +102,7 @@ def _send_and_run(client: OpenAI, assistant, thread, email: dict, classification
 
     # Build the tool_fns dict restricted to tools this assistant actually has
     tool_names = {
-        t["function"]["name"]
+        t.function.name
         for t in assistant.tools
         if t.type == "function"
     }

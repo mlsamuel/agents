@@ -39,7 +39,7 @@ def setup_tracing() -> trace.Tracer:
         exporter = OTLPSpanExporter(endpoint=otlp_endpoint)
         provider.add_span_processor(BatchSpanProcessor(exporter))
         logger.info("OTLP tracing enabled → %s", otlp_endpoint)
-    else:
+    elif os.environ.get("TRACING", "true").lower() != "false":
         provider.add_span_processor(BatchSpanProcessor(ConsoleSpanExporter()))
 
     trace.set_tracer_provider(provider)
