@@ -31,6 +31,7 @@ Flags:
 import argparse
 import csv
 import json
+import re
 import random
 import sys
 from collections import defaultdict
@@ -73,8 +74,21 @@ _DOMAIN_TO_KB_CATEGORIES = {
 BASE_SYSTEM = """\
 You are a customer support specialist. Handle the incoming email professionally.
 Use the knowledge base entries below to answer factual questions accurately.
-Follow the agent behaviour guidelines to ensure consistent, high-quality responses.
-Reply in plain prose only — no markdown, no bullet points."""
+Follow the agent behaviour guidelines to ensure consistent, high-quality responses."""
+
+_PII_PATTERN = re.compile(r"<[a-z_]+>")
+
+
+def _is_valid_answer(answer: str) -> bool:
+    """Return False for answers that would introduce noise into training."""
+    s = answer.strip()
+    if len(s) < 80:
+        return False                      # Too terse to be a useful signal
+    if s.startswith("{") or s.startswith("["):
+        return False                      # JSON-formatted ground truth
+    if _PII_PATTERN.search(s):
+        return False                      # Raw PII placeholders e.g. <name>
+    return True
 
 
 def _load_emails_by_domain(seed: int) -> dict[str, list[dict]]:
@@ -84,7 +98,8 @@ def _load_emails_by_domain(seed: int) -> dict[str, list[dict]]:
         for row in csv.DictReader(f):
             if row.get("language") != "en":
                 continue
-            if not row.get("answer", "").strip():
+            answer = row.get("answer", "").strip()
+            if not answer or not _is_valid_answer(answer):
                 continue
             domain = _QUEUE_TO_DOMAIN.get(row.get("queue", ""), "")
             if not domain:
@@ -92,7 +107,7 @@ def _load_emails_by_domain(seed: int) -> dict[str, list[dict]]:
             by_domain[domain].append({
                 "subject": row["subject"],
                 "body":    row["body"],
-                "answer":  row["answer"],
+                "answer":  answer,
                 "queue":   row["queue"],
             })
 
@@ -138,7 +153,7 @@ def _write_jsonl(path: Path, examples: list[dict]) -> None:
 
 def main() -> None:
     parser = argparse.ArgumentParser(description="Generate SFT dataset from emails.csv")
-    parser.add_argument("--train-per-domain", type=int, default=25)
+    parser.add_argument("--train-per-domain", type=int, default=40)
     parser.add_argument("--eval-per-domain",  type=int, default=5)
     parser.add_argument("--seed",             type=int, default=42)
     args = parser.parse_args()
