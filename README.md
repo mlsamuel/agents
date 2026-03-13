@@ -28,7 +28,7 @@ Eval results and the escalation review UI are viewable as a [static showcase](ht
 
 ### [agent-azure](agent-azure/)
 
-A customer support agent system built on Azure AI Foundry. Demonstrates Azure-native patterns: `AgentsClient` with persistent threads, `FileSearchTool` for managed RAG (no local embedding model), `ConnectedAgentTool` for multi-agent orchestration, Azure AI Content Safety guardrails on input and output, and OpenTelemetry traces + logs routed to Application Insights via `configure_azure_monitor()`.
+A customer support agent system built on Azure AI Foundry. Demonstrates Azure-native patterns: `AgentsClient` with persistent threads, `FileSearchTool` for managed RAG (no local embedding model), Azure AI Evaluation SDK managed evaluators (groundedness, relevance, coherence, fluency), Azure AI Content Safety guardrails on input and output, and OpenTelemetry traces + logs routed to Application Insights via `configure_azure_monitor()`.
 
 **Platform:** Azure AI Foundry (GPT-4o, Azure File Search vector store, Azure AI Content Safety)
 
