@@ -201,8 +201,8 @@ def generate_proposals(
     s = record["score"]
     example_text = (
         f"Subject: {record['subject']}\n"
-        f"Scores: action={s['action']}/5  completeness={s['completeness']}/5  "
-        f"tone={s['tone']}/5  avg={record['avg']:.1f}\n"
+        f"Scores: groundedness={s['groundedness']}/5  relevance={s['relevance']}/5  "
+        f"coherence={s['coherence']}/5  fluency={s['fluency']}/5  avg={record['avg']:.1f}\n"
         f"Eval comment: {s['comment']}\n\n"
         f"Ground truth reply:\n{record['ground_truth'][:800]}\n\n"
         f"Generated reply:\n{record['generated'][:800]}"

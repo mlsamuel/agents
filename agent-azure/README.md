@@ -1,6 +1,6 @@
 # Customer Support Agent Pipeline — Azure AI Foundry
 
-A multi-agent customer support pipeline built on Azure AI Foundry. Incoming emails are classified, decomposed into specialist agents, evaluated by an LLM judge, and iteratively improved by an automated improver — all running on Azure AI Agents with `DefaultAzureCredential`.
+A multi-agent customer support pipeline built on Azure AI Foundry. Incoming emails are classified, decomposed into specialist agents, evaluated by managed Azure AI Evaluation SDK evaluators, and iteratively improved by an automated improver — all running on Azure AI Agents with `DefaultAzureCredential`.
 
 ## Architecture
 
@@ -26,8 +26,8 @@ emails.csv
 [Content Safety guardrail] ← Azure AI Content Safety: screens input + output
     │
     ▼
-[Evaluator]                ← gpt-4o-mini LLM-as-judge: action / completeness / tone (1–5)
-    │                         response_format=json_object
+[Evaluator]                ← Azure AI Evaluation SDK: groundedness / relevance / coherence / fluency (1–5)
+    │                         CoherenceEvaluator, FluencyEvaluator, RelevanceEvaluator, GroundednessEvaluator
     ▼
 [Improver]                 ← gpt-4o: proposes skill_edit / kb_entry / agent_guideline
                               applies to skills/*.md + knowledge_base.json + agent_guidelines.json
@@ -40,7 +40,8 @@ emails.csv
 |---|---|
 | `FunctionTool` with auto function dispatch | `specialist_agents.py`, `tools.py` |
 | `FileSearchTool` + vector store (managed RAG) | `specialist_agents.py`, `kb_setup.py` |
-| `AgentsResponseFormat(type="json_object")` (structured output) | `classifier.py`, `evaluator.py` |
+| `AgentsResponseFormat(type="json_object")` (structured output) | `classifier.py` |
+| Azure AI Evaluation SDK managed evaluators | `evaluator.py` |
 | Agent reuse across calls (pool pattern) | `pipeline.py` — `_AgentPool` |
 | `DefaultAzureCredential` (az login / Managed Identity) | all modules |
 | Azure AI Content Safety input/output guardrails | `guardrails.py` |
@@ -123,7 +124,7 @@ agent-azure/
 ├── specialist_agents.py     # Foundry specialist agent factory: FunctionTool + FileSearch + skills
 ├── tools.py                 # ALL_TOOLS registry — Python functions dispatched by FunctionTool
 ├── skills.py                # loads/versions skill .md files; selects skill per email type
-├── evaluator.py             # LLM-as-judge scoring + eval_output.md writer
+├── evaluator.py             # Azure AI Evaluation SDK scoring + eval_output.md writer
 ├── improver.py              # generates + applies improvement proposals
 ├── kb_setup.py              # uploads KB + guidelines to Azure vector store
 ├── guardrails.py            # Azure AI Content Safety screening
@@ -183,17 +184,17 @@ When the improver adds a new KB entry, only the affected category file is replac
 
 ## Agent pooling
 
-The classifier, judge, and improver agents are created once at pipeline startup and reused across all emails. Threads are still per-call (they hold conversation state). Agents are deleted once on pipeline exit:
+The classifier and improver agents are created once at pipeline startup and reused across all emails. Threads are still per-call (they hold conversation state). Agents are deleted once on pipeline exit:
 
 ```
-startup  → create classifier, judge, improver, kb_merger, guideline_merger
-email 1  → classify (reuse classifier) → orchestrate → judge (reuse judge)
-email 2  → classify (reuse classifier) → orchestrate → judge (reuse judge)
+startup  → create classifier, improver, kb_merger, guideline_merger
+email 1  → classify (reuse classifier) → orchestrate → eval (Azure AI Evaluation SDK)
+email 2  → classify (reuse classifier) → orchestrate → eval (Azure AI Evaluation SDK)
 ...
-exit     → delete all 5 pooled agents
+exit     → delete all 4 pooled agents
 ```
 
-This avoids ~30–50 unnecessary create/delete round-trips over a 10-email run.
+Evaluation no longer requires a Foundry agent — the Azure AI Evaluation SDK calls the model directly as a stateless API call, so there is no agent lifecycle to manage for eval.
 
 ## Improve loop
 
@@ -217,7 +218,7 @@ pipeline.email
 │   ├── pipeline.decompose         attrs: agents_selected
 │   ├── pipeline.specialist.{key}  attrs: skill_name, tools_called, files_searched
 │   └── pipeline.merge             attrs: specialist_count
-└── eval                           attrs: avg, action, completeness, tone
+└── eval                           attrs: avg, groundedness, relevance, coherence, fluency
 ```
 
 Set `LOG_LEVEL=DEBUG` to see per-step function/file_search/code_interpreter traces for each specialist run.

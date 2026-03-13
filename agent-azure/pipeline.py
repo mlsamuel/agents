@@ -22,7 +22,7 @@ from azure.ai.agents import AgentsClient
 from azure.identity import DefaultAzureCredential
 
 from classifier import classify, create_agent as create_classifier_agent
-from evaluator import append_section, init_output, judge, create_agent as create_judge_agent
+from evaluator import append_section, init_output, judge
 from guardrails import GuardrailError
 from improver import apply_proposals, create_agents as create_improver_agents, generate_proposals
 from orchestrator_agent import orchestrate
@@ -40,7 +40,6 @@ from tracing import setup_tracing
 @dataclass
 class _AgentPool:
     classifier: object
-    judge: object
     improver: object
     kb_merger: object
     guideline_merger: object
@@ -50,7 +49,6 @@ def _create_pool(client: AgentsClient) -> _AgentPool:
     imp, kb, gl = create_improver_agents(client)
     return _AgentPool(
         classifier=create_classifier_agent(client),
-        judge=create_judge_agent(client),
         improver=imp,
         kb_merger=kb,
         guideline_merger=gl,
@@ -58,7 +56,7 @@ def _create_pool(client: AgentsClient) -> _AgentPool:
 
 
 def _delete_pool(client: AgentsClient, pool: _AgentPool) -> None:
-    for agent in (pool.classifier, pool.judge, pool.improver, pool.kb_merger, pool.guideline_merger):
+    for agent in (pool.classifier, pool.improver, pool.kb_merger, pool.guideline_merger):
         try:
             client.delete_agent(agent.id)
         except Exception:
@@ -190,16 +188,17 @@ def _run_email(client, email, i, args, vector_store_id, tracer, out_path, pool: 
             return None, classification
 
         with tracer.start_as_current_span("eval") as eval_span:
-            scores = judge(client, email, ground_truth, generated, agent=pool.judge)
+            scores = judge(email, ground_truth, generated)
             avg = scores["avg"]
             eval_span.set_attribute("eval.avg", avg)
-            eval_span.set_attribute("eval.action", scores["action"])
-            eval_span.set_attribute("eval.completeness", scores["completeness"])
-            eval_span.set_attribute("eval.tone", scores["tone"])
+            eval_span.set_attribute("eval.groundedness", scores["groundedness"])
+            eval_span.set_attribute("eval.relevance", scores["relevance"])
+            eval_span.set_attribute("eval.coherence", scores["coherence"])
+            eval_span.set_attribute("eval.fluency", scores["fluency"])
 
-        print(f"  [eval]         action={scores['action']}/5  "
-              f"completeness={scores['completeness']}/5  "
-              f"tone={scores['tone']}/5  avg={avg:.1f}  "
+        print(f"  [eval]         groundedness={scores['groundedness']}/5  "
+              f"relevance={scores['relevance']}/5  "
+              f"coherence={scores['coherence']}/5  fluency={scores['fluency']}/5  avg={avg:.1f}  "
               f"comment: {scores['comment']}")
 
         section = {
@@ -262,7 +261,7 @@ def _run_improve(
                     te_result = orchestrate(client, te_email, te_cls, vector_store_id, tracer)
                     te_generated = te_result.final_reply or ""
                     if te_generated:
-                        te_scores = judge(client, te_email, te["answer"], te_generated, agent=pool.judge)
+                        te_scores = judge(te_email, te["answer"], te_generated)
                         if te_scores["avg"] < REGRESSION_THRESHOLD:
                             failures.append({"subject": te["subject"], "avg": te_scores["avg"]})
                 if failures:
@@ -299,14 +298,16 @@ def _print_summary(output_sections, tally, args, out_path) -> None:
     if not (args.eval and output_sections):
         return
     n = len(output_sections)
-    avg_action       = sum(s["score"]["action"]       for s in output_sections) / n
-    avg_completeness = sum(s["score"]["completeness"] for s in output_sections) / n
-    avg_tone         = sum(s["score"]["tone"]         for s in output_sections) / n
-    overall          = (avg_action + avg_completeness + avg_tone) / 3
+    avg_groundedness = sum(s["score"]["groundedness"] for s in output_sections) / n
+    avg_relevance    = sum(s["score"]["relevance"]    for s in output_sections) / n
+    avg_coherence    = sum(s["score"]["coherence"]    for s in output_sections) / n
+    avg_fluency      = sum(s["score"]["fluency"]      for s in output_sections) / n
+    overall          = (avg_groundedness + avg_relevance + avg_coherence + avg_fluency) / 4
     print(f"\nEVAL SUMMARY ({n} emails scored)")
-    print(f"  action:       {avg_action:.1f}/5")
-    print(f"  completeness: {avg_completeness:.1f}/5")
-    print(f"  tone:         {avg_tone:.1f}/5")
+    print(f"  groundedness: {avg_groundedness:.1f}/5")
+    print(f"  relevance:    {avg_relevance:.1f}/5")
+    print(f"  coherence:    {avg_coherence:.1f}/5")
+    print(f"  fluency:      {avg_fluency:.1f}/5")
     print(f"  overall:      {overall:.1f}/5")
     if args.improve:
         print(f"  skills:       {tally['skill_edit']} edited, {tally['new_skill']} new")
