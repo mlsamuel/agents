@@ -1,6 +1,6 @@
 # Customer Support Agent Pipeline — Azure AI Foundry
 
-A multi-agent customer support pipeline built on Azure AI Foundry. Incoming emails are classified, routed to specialist agents, evaluated by an LLM judge, and iteratively improved by an automated improver — all running on Azure AI Agents with `DefaultAzureCredential`.
+A multi-agent customer support pipeline built on Azure AI Foundry. Incoming emails are classified, decomposed into specialist agents, evaluated by an LLM judge, and iteratively improved by an automated improver — all running on Azure AI Agents with `DefaultAzureCredential`.
 
 ## Architecture
 
@@ -9,28 +9,25 @@ emails.csv
     │
     ▼
 [Classifier]               ← gpt-4o-mini: queue, priority, type
+    │                         response_format=json_object (guaranteed JSON)
+    ▼
+[Decomposer]               ← gpt-4o-mini: selects which specialist(s) to call
     │
     ▼
-[Orchestrator]             ← gpt-4o: decomposes email → specialist agent(s)
-    │
-    ├── [Specialist agent: technical_support]
-    ├── [Specialist agent: billing]          ← parallel via ThreadPoolExecutor
-    ├── [Specialist agent: returns]
-    └── [Specialist agent: general]
-            │
-            ├── FunctionTool  (lookup_customer, get_ticket_history, create_ticket, ...)
-            ├── FileSearchTool (Azure vector store — KB + guidelines)
-            └── CodeInterpreterTool (billing only — refund/proration math)
+[Specialist agent(s)]      ← gpt-4o, sequential, one per concern
+    ├── FunctionTool        lookup_customer, get_ticket_history, create_ticket,
+    │                       check_order_status, process_refund, escalate_to_human
+    └── FileSearchTool      Azure vector store — KB + guidelines
     │
     ▼
-[Merge]                    ← gpt-4o: merges multi-specialist replies into one
+[Merge]                    ← gpt-4o: merges multi-specialist replies (single-specialist: skipped)
     │
     ▼
 [Content Safety guardrail] ← Azure AI Content Safety: screens input + output
     │
     ▼
 [Evaluator]                ← gpt-4o-mini LLM-as-judge: action / completeness / tone (1–5)
-    │
+    │                         response_format=json_object
     ▼
 [Improver]                 ← gpt-4o: proposes skill_edit / kb_entry / agent_guideline
                               applies to skills/*.md + knowledge_base.json + agent_guidelines.json
@@ -41,14 +38,15 @@ emails.csv
 
 | Pattern | Where |
 |---|---|
-| `AgentsClient` + `FunctionTool` (auto function dispatch) | `specialist_agents.py` |
+| `FunctionTool` with auto function dispatch | `specialist_agents.py`, `tools.py` |
 | `FileSearchTool` + vector store (managed RAG) | `specialist_agents.py`, `kb_setup.py` |
-| `CodeInterpreterTool` (managed sandbox) | `specialist_agents.py` (billing) |
-| Multi-agent fan-out with `ThreadPoolExecutor` | `orchestrator_agent.py` |
+| `AgentsResponseFormat(type="json_object")` (structured output) | `classifier.py`, `evaluator.py` |
+| Agent reuse across calls (pool pattern) | `pipeline.py` — `_AgentPool` |
 | `DefaultAzureCredential` (az login / Managed Identity) | all modules |
 | Azure AI Content Safety input/output guardrails | `guardrails.py` |
 | OpenTelemetry tracing → console + Azure Monitor | `tracing.py` |
 | Per-category vector store file management | `kb_setup.py` |
+| `ConnectedAgentTool` multi-agent demo | `demo_orchestrator.py` |
 
 ## Setup
 
@@ -77,7 +75,7 @@ FAST_MODEL=gpt-4o-mini
 CONTENT_SAFETY_ENDPOINT=https://<resource>.cognitiveservices.azure.com/
 
 VECTOR_STORE_ID=          # set after running kb_setup.py
-LOG_LEVEL=INFO            # set to DEBUG for step-level traces
+LOG_LEVEL=INFO            # DEBUG for verbose agent output
 ```
 
 Content Safety uses `DefaultAzureCredential` — no key needed. Assign the
@@ -121,15 +119,16 @@ python pipeline.py --offset 10 --limit 5  # emails 11–15
 agent-azure/
 ├── pipeline.py              # main entry point — classify → orchestrate → eval → improve loop
 ├── classifier.py            # email → {queue, priority, type, agent_key}
-├── orchestrator_agent.py    # decompose → fan-out → merge
-├── specialist_agents.py     # create/run/cleanup specialist agents with FunctionTool + FileSearch
+├── orchestrator_agent.py    # decompose → fan-out (sequential) → merge
+├── specialist_agents.py     # Foundry specialist agent factory: FunctionTool + FileSearch + skills
 ├── tools.py                 # ALL_TOOLS registry — Python functions dispatched by FunctionTool
-├── skills.py                # loads skill .md files, selects skill by type/subject
+├── skills.py                # loads/versions skill .md files; selects skill per email type
 ├── evaluator.py             # LLM-as-judge scoring + eval_output.md writer
 ├── improver.py              # generates + applies improvement proposals
 ├── kb_setup.py              # uploads KB + guidelines to Azure vector store
 ├── guardrails.py            # Azure AI Content Safety screening
 ├── tracing.py               # OpenTelemetry setup (console + Azure Monitor)
+├── agent_utils.py           # run_with_retry helper
 ├── logger.py                # shared logging — agents.* hierarchy, LOG_LEVEL env var
 ├── store.py                 # JSON-backed persistence (training set, guidelines, results)
 ├── requirements.txt
@@ -143,7 +142,7 @@ agent-azure/
     └── skills/
         ├── billing/
         │   ├── billing_inquiry.md
-        │   └── process_refund.md   # includes CodeInterpreterTool
+        │   └── process_refund.md
         ├── returns/
         │   └── initiate_return.md
         ├── technical_support/
@@ -153,20 +152,20 @@ agent-azure/
             └── general_inquiry.md
 ```
 
-## Skills
+## Orchestration
 
-Each specialist agent is given a skill — a markdown file that defines its workflow, tools, and reply format. The skill is selected by matching the email's `type` (Incident, Request, etc.) against the skill's frontmatter:
+The pipeline uses a three-step decompose → fan-out → merge flow:
 
-```markdown
----
-name: diagnose_incident
-agent: technical_support
-types: [Incident, Problem]
-tools: [lookup_customer, get_ticket_history, create_ticket, escalate_to_human]
----
-```
+**Decompose:** A lightweight `gpt-4o-mini` agent reads the email and returns which specialist(s) are needed (`technical_support`, `billing`, `returns`, or `general`). Most emails need only one.
 
-The `tools` list drives which Python functions are registered as `FunctionTool` and whether `CodeInterpreterTool` is added to the agent's toolset.
+**Fan-out:** Each specialist is a dedicated Foundry agent with:
+- A **skill file** as its system prompt (`data/skills/{domain}/{skill}.md`) — selected by matching the email's `type` against the skill's frontmatter
+- **`FunctionTool`** for CRM and ticketing actions (`lookup_customer`, `create_ticket`, `escalate_to_human`, etc.) — dispatched in-process via `enable_auto_function_calls`
+- **`FileSearchTool`** for KB and guideline retrieval from the Azure vector store
+
+`enable_auto_function_calls` is registered once on the shared client at startup with all tools. Each agent's `FunctionTool` definition controls which tools the model actually calls. Specialists run sequentially.
+
+**Merge:** If multiple specialists ran, a `gpt-4o` merge agent combines their replies into one coherent customer response. For single-specialist emails this step is skipped.
 
 ## Knowledge base
 
@@ -182,6 +181,20 @@ Entries are stored in `data/knowledge_base.json` and uploaded to an Azure manage
 
 When the improver adds a new KB entry, only the affected category file is replaced.
 
+## Agent pooling
+
+The classifier, judge, and improver agents are created once at pipeline startup and reused across all emails. Threads are still per-call (they hold conversation state). Agents are deleted once on pipeline exit:
+
+```
+startup  → create classifier, judge, improver, kb_merger, guideline_merger
+email 1  → classify (reuse classifier) → orchestrate → judge (reuse judge)
+email 2  → classify (reuse classifier) → orchestrate → judge (reuse judge)
+...
+exit     → delete all 5 pooled agents
+```
+
+This avoids ~30–50 unnecessary create/delete round-trips over a 10-email run.
+
 ## Improve loop
 
 After each email run, if the eval score is below `--min-score` (default 4.5/5), the improver:
@@ -194,21 +207,24 @@ After each email run, if the eval score is below `--min-score` (default 4.5/5), 
 
 ## Logging and tracing
 
-Set `LOG_LEVEL=DEBUG` in `.env` to see per-step traces:
+Set `APPLICATIONINSIGHTS_CONNECTION_STRING` to route all traces and logs to Azure Monitor / Application Insights via `configure_azure_monitor`.
 
+OpenTelemetry span hierarchy:
 ```
-DEBUG [agents.orchestrator_agent] decompose → agents=['technical_support'] reason=...
-DEBUG [agents.specialist_agents]  step 1  fn: lookup_customer   args={"keyword": "login"}
-DEBUG [agents.specialist_agents]  step 2  fn: get_ticket_history args={"customer_id": "CUST-001"}
-DEBUG [agents.specialist_agents]  step 3  code_interpreter       output: Customer: CUST-001 ...
-DEBUG [agents.specialist_agents]  step 4  file_search            files=['kb_technical.md']
+pipeline.email
+├── pipeline.classify              attrs: queue, priority, type
+├── pipeline.orchestrate           attrs: email.subject, classification.queue
+│   ├── pipeline.decompose         attrs: agents_selected
+│   ├── pipeline.specialist.{key}  attrs: skill_name, tools_called, files_searched
+│   └── pipeline.merge             attrs: specialist_count
+└── eval                           attrs: avg, action, completeness, tone
 ```
 
-Set `APPLICATIONINSIGHTS_CONNECTION_STRING` to route all traces and logs to Azure Monitor / Application Insights automatically via `configure_azure_monitor`.
+Set `LOG_LEVEL=DEBUG` to see per-step function/file_search/code_interpreter traces for each specialist run.
 
 ## Demo scripts
 
-Two standalone scripts demonstrate basic Azure AI Agents patterns independently of the pipeline:
+Two standalone scripts demonstrate Azure AI Agents patterns independently of the pipeline:
 
-- `kb_agent.py` — interactive KB Q&A via FileSearchTool
-- `demo_orchestrator.py` — ConnectedAgentTool multi-agent demo
+- `kb_agent.py` — interactive KB Q&A via `FileSearchTool`
+- `demo_orchestrator.py` — `ConnectedAgentTool` multi-agent demo (kb-specialist + triage-specialist)

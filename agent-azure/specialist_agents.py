@@ -2,26 +2,14 @@
 specialist_agents.py - Foundry specialist agent factory.
 
 Each specialist is a Foundry agent with:
-  - Skill content (Markdown) as system prompt + agent guidelines appended
+  - Skill content (Markdown) as system prompt
   - FunctionTool set appropriate for their domain (via enable_auto_function_calls)
   - FileSearchTool connected to the KB vector store
 
-Design note: each specialist gets its own AgentsClient so that
-enable_auto_function_calls (which sets global state on the client) is
-safe to use in parallel ThreadPoolExecutor workers.
-
 Public API:
-    create_specialist(client, agent_key, skill_content,
-                      vector_store_id, guidelines_text)
-        -> (agent, thread)
-
-    run_specialist(client, agent, thread, email, classification)
-        -> SpecialistResult
-
+    create_specialist(client, agent_key, skill_content, vector_store_id, skill_tools) -> (agent, thread)
+    run_specialist(client, agent, thread, email, classification) -> SpecialistResult
     cleanup(client, agent, thread) -> None
-
-    make_client(endpoint, credential) -> AgentsClient
-        Convenience: build a fresh client with auto-function-calls for agent_key.
 """
 
 import os
@@ -30,7 +18,6 @@ from dataclasses import dataclass, field
 
 from azure.ai.agents import AgentsClient
 from azure.ai.agents.models import CodeInterpreterTool, FileSearchTool, FunctionTool, ToolSet
-from azure.core.credentials import TokenCredential
 
 from agent_utils import run_with_retry
 from logger import get_logger
@@ -56,19 +43,6 @@ class SpecialistResult:
     steps_log: list[dict] = field(default_factory=list)
 
 
-def make_client(endpoint: str, credential: TokenCredential, skill_tools: list) -> AgentsClient:
-    """Create a fresh AgentsClient pre-configured for the skill's function tools.
-
-    Using a per-specialist client lets us call enable_auto_function_calls safely
-    in parallel threads without clobbering each other's registered functions.
-    """
-    client = AgentsClient(endpoint=endpoint, credential=credential)
-    tool_fns = {ALL_TOOLS[t] for t in skill_tools if t in ALL_TOOLS}
-    if tool_fns:
-        client.enable_auto_function_calls(tool_fns)
-    return client
-
-
 def create_specialist(
     client: AgentsClient,
     agent_key: str,
@@ -80,12 +54,9 @@ def create_specialist(
 
     The client must already have enable_auto_function_calls configured
     (done by make_client) so that create_and_process can dispatch calls.
-    Guidelines are retrieved at runtime via FileSearch (same vector store as KB).
 
     Returns (agent, thread).
     """
-    system_prompt = skill_content
-
     toolset = ToolSet()
     tool_fns = {ALL_TOOLS[t] for t in (skill_tools or []) if t in ALL_TOOLS}
     if tool_fns:
@@ -98,7 +69,7 @@ def create_specialist(
     agent = client.create_agent(
         model=MODEL,
         name=f"{agent_key}-specialist",
-        instructions=system_prompt,
+        instructions=skill_content,
         toolset=toolset,
     )
     thread = client.threads.create()
@@ -122,15 +93,12 @@ def _send_and_run(client, agent, thread, email: dict, classification: dict):
     )
     client.messages.create(thread_id=thread.id, role="user", content=user_msg)
 
-    # create_and_process handles the tool-call loop automatically because
-    # make_client registered our functions via enable_auto_function_calls.
     run = run_with_retry(client, thread.id, agent.id)
 
     if run.status == "incomplete":
         reason = getattr(getattr(run, "incomplete_details", None), "reason", "unknown")
         if reason != "content_filter":
             raise RuntimeError(f"Specialist run failed: status={run.status}, reason={reason}")
-        # content_filter: fall through with empty reply; fallback applied in _extract_reply
     elif run.status != "completed":
         raise RuntimeError(
             f"Specialist run failed: status={run.status}, "

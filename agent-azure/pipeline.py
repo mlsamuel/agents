@@ -27,6 +27,7 @@ from guardrails import GuardrailError
 from improver import apply_proposals, create_agents as create_improver_agents, generate_proposals
 from orchestrator_agent import orchestrate
 from skills import all_skills, rollback
+from tools import ALL_TOOLS
 from store import (
     REGRESSION_THRESHOLD,
     add_training_email,
@@ -345,6 +346,7 @@ def main() -> None:
         endpoint=os.environ["PROJECT_ENDPOINT"],
         credential=DefaultAzureCredential(),
     )
+    client.enable_auto_function_calls(set(ALL_TOOLS.values()))
     tracer = setup_tracing()
 
     mode_parts = []
