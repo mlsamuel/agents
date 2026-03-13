@@ -188,7 +188,7 @@ agent-openai/
 
 ## Orchestration
 
-The pipeline uses a three-step decompose → fan-out → merge flow, same as agent-azure:
+The pipeline uses a three-step decompose → fan-out → merge flow:
 
 **Decompose:** `gpt-4o-mini` reads the email and returns which specialist(s) are needed
 (`technical_support`, `billing`, `returns`, or `general`). Most emails need only one.

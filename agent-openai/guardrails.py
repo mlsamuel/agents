@@ -1,7 +1,6 @@
 """
 guardrails.py - Content moderation using OpenAI Moderation API.
 
-Replaces Azure AI Content Safety with OpenAI's built-in moderation endpoint.
 No API key beyond OPENAI_API_KEY is required.
 
 Public API:
