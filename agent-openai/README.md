@@ -44,11 +44,15 @@ emails.csv (en only)
 sft/generate_guidelines.py  ← GPT-4o extracts behavioural guidelines from email examples
     │                          merges into data/agent_guidelines.json
     ▼
-sft/generate_dataset.py     ← stratified sample: ~160 train + 20 eval (40+5 per domain, quality-filtered)
-    │                          system = KB (domain-filtered) + all guidelines
+sft/generate_dataset.py     ← text-only: ~160 train + 20 eval (40+5 per domain, quality-filtered)
+    │   OR                     system = KB (domain-filtered) + all guidelines
     │                          assistant = ground-truth answer from emails.csv
+sft/generate_tool_dataset.py← tool-call traces: ~20 train + 12 eval (5+3 per domain)
+    │                          gpt-4o (teacher) runs Chat Completions tool-dispatch loop
+    │                          captures full trace: tool_calls → results → final reply
+    │                          filtered: examples with 0 tool calls discarded
     ▼
-sft/fine_tune.py            ← uploads train.jsonl, starts gpt-4o-mini SFT job, polls to completion
+sft/fine_tune.py            ← uploads train.jsonl or train_tool.jsonl, starts SFT job
     │                          saves model ID to data/sft/model_id.txt
     ▼
 sft/compare_pipeline.py     ← runs each email through the full pipeline twice
@@ -121,7 +125,7 @@ python sft/generate_guidelines.py
 # merges into data/agent_guidelines.json
 ```
 
-**Step 2 — Generate training data**
+**Step 2a — Generate text-only training data** (domain adaptation)
 
 ```bash
 python sft/generate_dataset.py
@@ -130,12 +134,23 @@ python sft/generate_dataset.py
 # prints estimated training tokens and cost
 ```
 
+**Step 2b — Generate tool-call training data** (teach tool use)
+
+```bash
+python sft/generate_tool_dataset.py
+# gpt-4o (teacher) runs Chat Completions tool-dispatch loop on each email
+# captures full trace: tool_calls → tool results → final reply
+# writes data/sft/train_tool.jsonl (~20 examples) + eval_tool.jsonl (~12 examples)
+# examples with zero tool calls are discarded automatically
+```
+
 **Step 3 — Fine-tune**
 
 ```bash
 python sft/fine_tune.py
-# uploads train.jsonl, starts gpt-4o-mini-2024-07-18 SFT job
-# polls to completion, saves model ID to data/sft/model_id.txt
+# uploads train.jsonl (or pass --train-file data/sft/train_tool.jsonl for tool-call SFT)
+# starts gpt-4o-mini-2024-07-18 SFT job, polls to completion
+# saves model ID to data/sft/model_id.txt
 # add FINETUNED_MODEL=ft:gpt-4o-mini-... to .env
 ```
 
@@ -169,10 +184,11 @@ agent-openai/
 ├── requirements.txt
 ├── .env.example
 ├── sft/
-│   ├── generate_guidelines.py  # extract behavioural guidelines from emails.csv via LLM
-│   ├── generate_dataset.py     # build train.jsonl + eval.jsonl for fine-tuning
-│   ├── fine_tune.py            # upload data, start SFT job, poll to completion
-│   └── compare_pipeline.py     # compare base vs. fine-tuned using the full pipeline (real tool calls)
+│   ├── generate_guidelines.py   # extract behavioural guidelines from emails.csv via LLM
+│   ├── generate_dataset.py      # text-only dataset: train.jsonl + eval.jsonl
+│   ├── generate_tool_dataset.py # tool-call dataset: train_tool.jsonl + eval_tool.jsonl (gpt-4o teacher)
+│   ├── fine_tune.py             # upload data, start SFT job, poll to completion
+│   └── compare_pipeline.py      # compare base vs. fine-tuned using the full pipeline (real tool calls)
 └── data/
     ├── emails.csv                  # evaluation dataset (16,338 English emails)
     ├── knowledge_base.json         # KB source (uploaded per-category to vector store)
@@ -180,8 +196,10 @@ agent-openai/
     ├── training_set.json           # regression emails per skill
     ├── pipeline_results.json       # all pipeline run results
     ├── sft/
-    │   ├── train.jsonl             # SFT training examples
-    │   ├── eval.jsonl              # held-out examples (used by generate_dataset.py; not used by compare_pipeline)
+    │   ├── train.jsonl             # text-only training examples (generate_dataset.py)
+    │   ├── eval.jsonl              # text-only held-out examples
+    │   ├── train_tool.jsonl        # tool-call training examples (generate_tool_dataset.py)
+    │   ├── eval_tool.jsonl         # tool-call held-out examples
     │   ├── model_id.txt            # fine-tuned model ID (written by fine_tune.py)
     │   └── compare_report.md       # base vs. fine-tuned pipeline comparison report
     └── skills/

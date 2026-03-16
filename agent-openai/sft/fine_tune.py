@@ -31,23 +31,26 @@ TRAIN_FILE = SFT_DIR / "train.jsonl"
 
 def main() -> None:
     parser = argparse.ArgumentParser(description="Fine-tune a model on the SFT dataset")
-    parser.add_argument("--model",   default="gpt-4o-mini-2024-07-18")
-    parser.add_argument("--suffix",  default="cs-agent",
+    parser.add_argument("--model",      default="gpt-4o-mini-2024-07-18")
+    parser.add_argument("--suffix",     default="cs-agent",
                         help="Suffix appended to the fine-tuned model name")
-    parser.add_argument("--epochs",  type=int, default=3)
-    parser.add_argument("--poll",    type=int, default=30,
+    parser.add_argument("--epochs",     type=int, default=3)
+    parser.add_argument("--poll",       type=int, default=30,
                         help="Status polling interval in seconds")
+    parser.add_argument("--train-file", type=Path, default=TRAIN_FILE,
+                        help="Path to training JSONL (default: data/sft/train.jsonl)")
     args = parser.parse_args()
 
-    if not TRAIN_FILE.exists():
-        print(f"ERROR: {TRAIN_FILE} not found. Run generate_dataset.py first.")
+    train_file = args.train_file
+    if not train_file.exists():
+        print(f"ERROR: {train_file} not found.")
         sys.exit(1)
 
     client = OpenAI()
 
     # Upload training file
-    print(f"Uploading {TRAIN_FILE} …")
-    with open(TRAIN_FILE, "rb") as f:
+    print(f"Uploading {train_file} …")
+    with open(train_file, "rb") as f:
         upload = client.files.create(file=f, purpose="fine-tune")
     print(f"  File uploaded: {upload.id}")
 
