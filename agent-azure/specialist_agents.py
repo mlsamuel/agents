@@ -20,6 +20,7 @@ from azure.ai.agents import AgentsClient
 from azure.ai.agents.models import CodeInterpreterTool, FileSearchTool, FunctionTool, ToolSet
 
 from agent_utils import run_with_retry
+from evaluator import validate_reply
 from logger import get_logger
 from tools import ALL_TOOLS
 
@@ -41,6 +42,7 @@ class SpecialistResult:
     files_searched: list[str] = field(default_factory=list)
     internal_summary: str = ""
     steps_log: list[dict] = field(default_factory=list)
+    kb_context: str = ""  # retrieved KB text for groundedness validation
 
 
 def create_specialist(
@@ -131,15 +133,18 @@ def _extract_reply(client, thread, run) -> str:
     return reply
 
 
-def _parse_steps(client, thread, run) -> tuple[list[str], list[str], list[dict], bool]:
-    """Parse run steps into (tools_called, files_searched, steps_log, escalated).
+def _parse_steps(client, thread, run) -> tuple[list[str], list[str], list[dict], bool, str]:
+    """Parse run steps into (tools_called, files_searched, steps_log, escalated, kb_context).
 
+    kb_context is the concatenated text of KB chunks retrieved by FileSearch,
+    capped at 3000 chars — used as context for GroundednessEvaluator validation.
     run_steps.list returns most-recent-first; reverse for chronological order.
     """
     tools_called: list[str] = []
     files_searched: list[str] = []
     steps_log: list[dict] = []
     escalated = False
+    content_parts: list[str] = []
 
     raw_steps = list(client.run_steps.list(thread_id=thread.id, run_id=run.id))
     for step_num, step in enumerate(reversed(raw_steps), start=1):
@@ -189,13 +194,18 @@ def _parse_steps(client, thread, run) -> tuple[list[str], list[str], list[dict],
                         files_searched.append(fname)
                     if fname and fname not in fnames:
                         fnames.append(fname)
+                    for c in (getattr(r, "content", None) or []):
+                        text = getattr(c, "text", None)
+                        if text:
+                            content_parts.append(text[:500])
                 steps_log.append({
                     "step": step_num,
                     "type": "file_search",
                     "files": fnames,
                 })
 
-    return tools_called, files_searched, steps_log, escalated
+    kb_context = "\n\n".join(content_parts)[:3000]
+    return tools_called, files_searched, steps_log, escalated, kb_context
 
 
 def run_specialist(
@@ -210,10 +220,10 @@ def run_specialist(
 
     run = _send_and_run(client, agent, thread, email, classification)
     reply = _extract_reply(client, thread, run)
-    tools_called, files_searched, steps_log, escalated = _parse_steps(client, thread, run)
+    tools_called, files_searched, steps_log, escalated, kb_context = _parse_steps(client, thread, run)
 
     m = _TICKET_RE.search(reply)
-    return SpecialistResult(
+    result = SpecialistResult(
         agent_key=agent_key,
         skill_name=agent.name,
         reply=reply,
@@ -223,7 +233,32 @@ def run_specialist(
         files_searched=files_searched,
         internal_summary=reply.split(".")[0].strip(),
         steps_log=steps_log,
+        kb_context=kb_context,
     )
+
+    query = f"{email.get('subject', '')}\n{(email.get('body') or '')[:800]}"
+    passed, val_score, val_reason = validate_reply(query, result.reply, context=kb_context)
+    if not passed:
+        log.warning(
+            "Validation gate blocked %s reply: score=%s reason=%s",
+            agent_key, val_score, val_reason[:120],
+        )
+        result = SpecialistResult(
+            agent_key=result.agent_key,
+            skill_name=result.skill_name,
+            reply=(
+                "Your request has been logged and will be reviewed by a specialist. "
+                "We will be in touch shortly."
+            ),
+            ticket_id=result.ticket_id,
+            escalated=True,
+            tools_called=result.tools_called,
+            files_searched=result.files_searched,
+            kb_context=result.kb_context,
+            steps_log=result.steps_log,
+        )
+
+    return result
 
 
 def cleanup(client: AgentsClient, agent, thread) -> None:

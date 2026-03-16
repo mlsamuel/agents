@@ -149,6 +149,7 @@ def _run_one_specialist(
             result = run_specialist(client, agent, thread, email, classification)
             span.set_attribute("tools_called", str(result.tools_called))
             span.set_attribute("files_searched", str(result.files_searched))
+            span.set_attribute("validation.escalated", result.escalated)
             return result
     finally:
         cleanup(client, agent, thread)

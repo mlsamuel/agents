@@ -6,6 +6,10 @@ Public API:
         Returns: {groundedness: 1-5, relevance: 1-5, coherence: 1-5, fluency: 1-5,
                   avg: float, comment: str}
 
+    validate_reply(query, reply, context="") -> tuple[bool, float, str]
+        Pre-send validation gate. Returns (passed, score, reason).
+        Uses GroundednessEvaluator when KB context is available, RelevanceEvaluator otherwise.
+
     init_output(path)          -> None
     append_section(section, path) -> None
 """
@@ -74,6 +78,28 @@ def judge(email: dict, ground_truth: str, generated: str) -> dict:
     )
 
     return scores
+
+
+def validate_reply(query: str, reply: str, context: str = "") -> tuple[bool, float, str]:
+    """Pre-send validation gate. Returns (passed, score, reason).
+
+    With context (retrieved KB text): uses GroundednessEvaluator — checks that every
+    claim in the reply is supported by the KB. Score 1/5 = not grounded → block.
+    Without context: falls back to RelevanceEvaluator (is the reply on-topic?).
+    Threshold > 1 gates only clear failures to avoid over-blocking.
+    """
+    model_config = _get_model_config()
+    if context:
+        result = GroundednessEvaluator(model_config)(
+            query=query, response=reply, context=context
+        )
+        score = result["groundedness"]
+        reason = result.get("groundedness_reason", "")
+    else:
+        result = RelevanceEvaluator(model_config)(query=query, response=reply)
+        score = result["relevance"]
+        reason = result.get("relevance_reason", "")
+    return score > 1, score, reason
 
 
 # ── Output helpers ────────────────────────────────────────────────────────────
