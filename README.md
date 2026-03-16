@@ -28,7 +28,7 @@ Eval results and the escalation review UI are viewable as a [static showcase](ht
 
 ### [agent-azure](agent-azure/)
 
-A customer support agent system built on Azure AI Foundry. Demonstrates Azure-native patterns: `AgentsClient` with persistent threads, `FileSearchTool` for managed RAG (no local embedding model), Azure AI Evaluation SDK managed evaluators (groundedness, relevance, coherence, fluency), Azure AI Content Safety guardrails on input and output, and OpenTelemetry traces + logs routed to Application Insights via `configure_azure_monitor()`.
+A customer support agent system built on Azure AI Foundry. Demonstrates Azure-native patterns: `AgentsClient` with persistent threads, `FileSearchTool` for managed RAG (no local embedding model), Azure AI Evaluation SDK managed evaluators (groundedness, relevance, coherence, fluency), a pre-send validation gate (`GroundednessEvaluator` against retrieved KB content) that blocks ungrounded replies before they reach the customer, Azure AI Content Safety guardrails on input and output, and OpenTelemetry traces + logs routed to Application Insights via `configure_azure_monitor()`.
 
 **Platform:** Azure AI Foundry (GPT-4o, Azure File Search vector store, Azure AI Content Safety)
 
@@ -38,4 +38,4 @@ The same pipeline built directly on the OpenAI APIs, extended with Supervised Fi
 
 **Transport:** in-process (OpenAI Assistants API with `file_search` + function tools for specialist agents)
 
-**SFT:** `gpt-4o-mini-2024-07-18` fine-tuned to follow behaviour guidelines without needing them in the inference prompt — verified by `sft/evaluate.py` which scores both models side-by-side on 20 held-out examples.
+**SFT:** `gpt-4.1-mini-2025-04-14` fine-tuned on tool-call traces (gpt-4o teacher → student distillation) for domain adaptation — compared against the base model by `sft/compare_pipeline.py` which runs both models through the full pipeline with real tool calls and scores them side-by-side.

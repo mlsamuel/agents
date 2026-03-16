@@ -9,28 +9,28 @@ Supervised Fine-Tuning (SFT) to bake agent behaviour guidelines into model weigh
 emails.csv
     │
     ▼
-[Classifier]               ← gpt-4o-mini: queue, priority, type
+[Classifier]               ← gpt-4.1-mini: queue, priority, type
     │                         Chat Completions + response_format=json_object
     ▼
-[Decomposer]               ← gpt-4o-mini: selects which specialist(s) to call
+[Decomposer]               ← gpt-4.1-mini: selects which specialist(s) to call
     │                         Chat Completions + response_format=json_object
     ▼
-[Specialist agent(s)]      ← gpt-4o (or fine-tuned), sequential, one per concern
+[Specialist agent(s)]      ← gpt-4.1-mini (or fine-tuned), sequential, one per concern
     ├── Function tools       lookup_customer, get_ticket_history, create_ticket,
     │                        check_order_status, process_refund, escalate_to_human
     └── file_search          OpenAI vector store — KB + guidelines
     │
     ▼
-[Merge]                    ← gpt-4o: merges multi-specialist replies (single: skipped)
+[Merge]                    ← gpt-4.1-mini: merges multi-specialist replies (single: skipped)
     │
     ▼
 [Moderation guardrail]     ← openai.moderations: screens input + output
     │
     ▼
-[Evaluator]                ← gpt-4o-mini LLM-as-judge: action / completeness / tone (1–5)
+[Evaluator]                ← gpt-4.1-mini LLM-as-judge: action / completeness / tone (1–5)
     │                         Chat Completions + response_format=json_object
     ▼
-[Improver]                 ← gpt-4o: proposes skill_edit / kb_entry / agent_guideline
+[Improver]                 ← gpt-4.1-mini: proposes skill_edit / kb_entry / agent_guideline
                               applies to skills/*.md + knowledge_base.json + agent_guidelines.json
                               re-uploads affected KB category to vector store
 ```
@@ -149,9 +149,9 @@ python sft/generate_tool_dataset.py
 ```bash
 python sft/fine_tune.py
 # uploads train.jsonl (or pass --train-file data/sft/train_tool.jsonl for tool-call SFT)
-# starts gpt-4o-mini-2024-07-18 SFT job, polls to completion
+# starts gpt-4.1-mini-2025-04-14 SFT job, polls to completion
 # saves model ID to data/sft/model_id.txt
-# add FINETUNED_MODEL=ft:gpt-4o-mini-... to .env
+# add FINETUNED_MODEL=ft:gpt-4.1-mini-... to .env
 ```
 
 **Step 4 — Compare**
@@ -213,7 +213,7 @@ agent-openai/
 
 The pipeline uses a three-step decompose → fan-out → merge flow:
 
-**Decompose:** `gpt-4o-mini` reads the email and returns which specialist(s) are needed
+**Decompose:** `gpt-4.1-mini` reads the email and returns which specialist(s) are needed
 (`technical_support`, `billing`, `returns`, or `general`). Most emails need only one.
 
 **Fan-out:** Each specialist is an OpenAI Assistant with:
@@ -224,7 +224,7 @@ The pipeline uses a three-step decompose → fan-out → merge flow:
 Specialists run sequentially. The tool dispatch loop in `agent_utils.py` handles `requires_action`
 states (function calls) before returning the completed run.
 
-**Merge:** If multiple specialists ran, `gpt-4o` combines their replies.
+**Merge:** If multiple specialists ran, `gpt-4.1-mini` combines their replies.
 
 ## Knowledge base
 
@@ -260,7 +260,7 @@ Guidelines also grow over time via the improver loop — retraining every time a
 added is impractical. Guidelines belong in the prompt where they can be updated instantly
 without touching model weights.
 
-`evaluate.py` tests this correctly: both models use the same system prompt (base instructions
+`compare_pipeline.py` tests this correctly: both models use the same system prompt (base instructions
 + guidelines + file_search). Any quality gap reflects domain adaptation, not missing context.
 
 **Training data format:**
@@ -277,9 +277,9 @@ Training examples are filtered automatically: answers shorter than 80 characters
 responses, and answers containing raw PII placeholders (e.g. `<name>`, `<tel_num>`) are excluded
 to prevent noise from polluting the training signal.
 
-**Cost estimate (~160 training examples on gpt-4o-mini-2024-07-18):**
+**Cost estimate (~160 training examples on gpt-4.1-mini-2025-04-14):**
 ~640K tokens × 3 epochs × $0.003/1K = ~$5.76 per run.
-Pricing: training $0.003/1K tokens · inference input $0.0003/1K · inference output $0.0012/1K.
+Pricing: training $0.003/1K tokens · inference input $0.0004/1K · inference output $0.0016/1K.
 Costs scale with epoch count and total context length (KB + guidelines in each example can be long).
 Check the OpenAI dashboard after each job for the exact amount.
 

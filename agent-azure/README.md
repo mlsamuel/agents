@@ -20,6 +20,9 @@ emails.csv
     └── FileSearchTool      Azure vector store — KB + guidelines
     │
     ▼
+[Validation gate]          ← GroundednessEvaluator (KB context available) or RelevanceEvaluator
+    │                         score ≤ 1 → replace reply with escalation before merging
+    ▼
 [Merge]                    ← gpt-4o: merges multi-specialist replies (single-specialist: skipped)
     │
     ▼
@@ -42,6 +45,7 @@ emails.csv
 | `FileSearchTool` + vector store (managed RAG) | `specialist_agents.py`, `kb_setup.py` |
 | `AgentsResponseFormat(type="json_object")` (structured output) | `classifier.py` |
 | Azure AI Evaluation SDK managed evaluators | `evaluator.py` |
+| Pre-send groundedness/relevance validation gate | `evaluator.py`, `specialist_agents.py` |
 | Agent reuse across calls (pool pattern) | `pipeline.py` — `_AgentPool` |
 | `DefaultAzureCredential` (az login / Managed Identity) | all modules |
 | Azure AI Content Safety input/output guardrails | `guardrails.py` |
@@ -216,7 +220,7 @@ pipeline.email
 ├── pipeline.classify              attrs: queue, priority, type
 ├── pipeline.orchestrate           attrs: email.subject, classification.queue
 │   ├── pipeline.decompose         attrs: agents_selected
-│   ├── pipeline.specialist.{key}  attrs: skill_name, tools_called, files_searched
+│   ├── pipeline.specialist.{key}  attrs: skill_name, tools_called, files_searched, validation.escalated
 │   └── pipeline.merge             attrs: specialist_count
 └── eval                           attrs: avg, groundedness, relevance, coherence, fluency
 ```
