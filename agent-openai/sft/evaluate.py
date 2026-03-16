@@ -1,14 +1,17 @@
 """
 evaluate.py - Compare base vs. fine-tuned model on the held-out eval set.
 
-Both models use the Responses API with file_search for KB retrieval.
-The difference is the system prompt:
+Both models use the Responses API with file_search for KB retrieval and
+the same system prompt (base instructions + guidelines). The only difference
+is the model weights:
 
-  Base model (gpt-4o-mini):      file_search (KB) + guidelines in system prompt
-  Fine-tuned model (ft:...):     file_search (KB) only — NO guidelines in system prompt
+  Base model (gpt-4o-mini):      standard weights + guidelines in prompt + file_search
+  Fine-tuned model (ft:...):     domain-adapted weights + guidelines in prompt + file_search
 
-If the fine-tuned model scores comparably to the base model without needing
-the guidelines in its prompt, the training successfully baked in the behaviour.
+If the fine-tuned model scores higher than the base model, SFT improved reply
+quality through domain adaptation. KB retrieval and guidelines are kept in the
+prompt for both models — guidelines are operational decision rules that should
+be followed explicitly, not baked into weights.
 
 Run after fine_tune.py:
     python sft/evaluate.py
@@ -105,26 +108,12 @@ def _judge(client: OpenAI, user_msg: str, ground_truth: str, generated: str, jud
     return scores
 
 
-def _make_minimal_system(example: dict) -> str:
-    """Return base instructions only — KB and guidelines both stripped.
-
-    Used for the fine-tuned model: guidelines are baked in via training,
-    KB is retrieved at runtime via file_search.
-    """
-    system = next((m["content"] for m in example["messages"] if m["role"] == "system"), "")
-    # Strip inline KB — file_search handles retrieval at runtime
-    if "## Knowledge Base" in system:
-        system = system[:system.index("## Knowledge Base")].rstrip()
-    # Strip guidelines — baked into fine-tuned weights
-    if "## Agent Behaviour Guidelines" in system:
-        system = system[:system.index("## Agent Behaviour Guidelines")].rstrip()
-    return system.strip() or "You are a customer support specialist."
-
-
-def _make_base_system(example: dict) -> str:
+def _make_inference_system(example: dict) -> str:
     """Return base instructions + guidelines — KB stripped (file_search handles it).
 
-    Used for the base model comparison: guidelines in prompt, KB via file_search.
+    Used for both base and fine-tuned models. Guidelines are operational decision
+    rules that belong in the prompt for both models; they should not be removed
+    after fine-tuning. KB is stripped because file_search retrieves it at runtime.
     """
     system = next((m["content"] for m in example["messages"] if m["role"] == "system"), "")
     # Strip inline KB — file_search handles retrieval at runtime
@@ -153,8 +142,8 @@ def _write_report(path: Path, rows: list[dict], base_model: str, ft_model: str,
     lines = [
         f"# SFT Evaluation Report — {started_at}",
         "",
-        f"**Base model:** {base_model} (file_search + guidelines in prompt)",
-        f"**Fine-tuned model:** {ft_model} (file_search only, no guidelines in prompt)",
+        f"**Base model:** {base_model} (guidelines in prompt + file_search)",
+        f"**Fine-tuned model:** {ft_model} (guidelines in prompt + file_search)",
         f"**Examples evaluated:** {progress}",
         "",
         "## Summary (so far)",
@@ -241,11 +230,10 @@ def main() -> None:
 
         print(f"  [{i}/{len(examples)}] {subject}")
 
-        base_system = _make_base_system(example)
-        ft_system   = _make_minimal_system(example)
+        system_prompt = _make_inference_system(example)
 
-        base_reply = _run_model(client, args.base_model, base_system, user_msg, args.vector_store_id)
-        ft_reply   = _run_model(client, ft_model, ft_system, user_msg, args.vector_store_id)
+        base_reply = _run_model(client, args.base_model, system_prompt, user_msg, args.vector_store_id)
+        ft_reply   = _run_model(client, ft_model,        system_prompt, user_msg, args.vector_store_id)
 
         base_scores = _judge(client, user_msg, ground_truth, base_reply, args.judge_model)
         ft_scores   = _judge(client, user_msg, ground_truth, ft_reply, args.judge_model)

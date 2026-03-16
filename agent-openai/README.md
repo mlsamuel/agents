@@ -52,14 +52,13 @@ sft/fine_tune.py            ← uploads train.jsonl, starts gpt-4o-mini SFT job,
     │                          saves model ID to data/sft/model_id.txt
     ▼
 sft/evaluate.py             ← both models use Responses API + file_search for KB retrieval
-                               base: file_search + guidelines in system prompt
-                               fine-tuned: file_search only (no guidelines in prompt)
+                               both use same system prompt: base instructions + guidelines
                                LLM judge scores both; writes eval_report.md after every example
 ```
 
-**What fine-tuning proves:** If the fine-tuned model matches the base model's scores
-without needing the guidelines in its system prompt, the training successfully baked in
-the behavioural patterns. KB retrieval still happens at runtime via `file_search`.
+**What fine-tuning proves:** If the fine-tuned model scores higher than the base model when
+given the same prompt, SFT improved reply quality through domain adaptation (tone, format,
+KB context utilisation). Guidelines stay in both prompts as explicit operational control.
 
 ### OpenAI API patterns demonstrated
 
@@ -223,14 +222,25 @@ When the improver adds a new KB entry, only the affected category file is replac
 
 ## SFT design rationale
 
-**Why guidelines go into training, not the prompt:**
+**What SFT provides — domain adaptation, not guideline baking:**
 
-In production, the KB grows continuously — too large to embed in every system prompt.
-The solution is `file_search` for all KB content at inference time. However, behavioural
-guidelines (asking clarifying questions, escalation rules, tone patterns) are stable and
-policy-driven. They make natural SFT training signal: bake them into the model once, then
-remove them from the inference prompt. The evaluate.py script proves this works by measuring
-whether the fine-tuned model maintains quality without the guidelines.
+SFT on customer support examples teaches the model how support emails are structured, what
+good replies look like, appropriate tone and professional register, the right level of detail
+per domain, and how to incorporate retrieved KB content effectively. These are genuine
+improvements measurable by the LLM judge.
+
+**Why guidelines stay in the prompt:**
+
+The 27+ agent guidelines are specific, conditional operational decision rules — e.g. *"when
+customer mentions CI/CD, ask for project environment and tooling before routing"* or *"offer
+to schedule a call for complex troubleshooting involving critical access"*. SFT teaches
+probabilistic tendencies; it cannot guarantee a specific rule fires at the right moment.
+Guidelines also grow over time via the improver loop — retraining every time a guideline is
+added is impractical. Guidelines belong in the prompt where they can be updated instantly
+without touching model weights.
+
+`evaluate.py` tests this correctly: both models use the same system prompt (base instructions
++ guidelines + file_search). Any quality gap reflects domain adaptation, not missing context.
 
 **Training data format:**
 

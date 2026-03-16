@@ -11,13 +11,14 @@ Each example:
   assistant: ground-truth answer from emails.csv
 
 The system prompt includes:
-  - KB entries for the email's domain (simulates retrieval — keeps context manageable)
-  - All agent guidelines (these will be ABSENT from the fine-tuned model's inference prompt
-    to prove the model learned them during training)
+  - KB entries for the email's domain (simulates what file_search retrieves at inference —
+    same content, same position in context before the email)
+  - All agent guidelines (operational decision rules that stay in the prompt at inference
+    for both base and fine-tuned models — guidelines are not baked into weights)
 
-At inference, file_search retrieves KB from the vector store — same content, same position
-in context (before the email). The fine-tuned model is tested without guidelines to verify
-they were baked into weights.
+At inference, file_search retrieves KB from the vector store. Guidelines remain in the
+system prompt explicitly. SFT teaches domain adaptation: tone, reply format, depth
+calibration, and how to use retrieved KB context effectively.
 
 Run after generate_guidelines.py:
     python sft/generate_dataset.py
