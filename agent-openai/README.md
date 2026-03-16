@@ -51,20 +51,23 @@ sft/generate_dataset.py     ← stratified sample: ~160 train + 20 eval (40+5 pe
 sft/fine_tune.py            ← uploads train.jsonl, starts gpt-4o-mini SFT job, polls to completion
     │                          saves model ID to data/sft/model_id.txt
     ▼
-sft/evaluate.py             ← both models use Responses API + file_search for KB retrieval
-                               both use same system prompt: base instructions + guidelines
-                               LLM judge scores both; writes eval_report.md after every example
+sft/compare_pipeline.py     ← runs each email through the full pipeline twice
+                               base model: classify → orchestrate (tools + file_search) → judge
+                               ft model:   classify → orchestrate (tools + file_search) → judge
+                               compares action/completeness/tone scores + tool call counts
+                               writes compare_report.md after every email
 ```
 
-**What fine-tuning proves:** If the fine-tuned model scores higher than the base model when
-given the same prompt, SFT improved reply quality through domain adaptation (tone, format,
-KB context utilisation). Guidelines stay in both prompts as explicit operational control.
+**What fine-tuning proves:** If the fine-tuned model scores higher than the base model on
+action/completeness/tone when running the full pipeline (with real tool calls and KB
+retrieval), SFT improved domain adaptation. The comparison is honest because both models
+use identical infrastructure — the only difference is model weights.
 
 ### OpenAI API patterns demonstrated
 
 | Pattern | Where |
 |---|---|
-| Responses API with `file_search` + structured output | `sft/evaluate.py` |
+| Responses API with `file_search` + structured output | `sft/compare_pipeline.py` (judge) |
 | Function tools with manual dispatch loop | `specialist_agents.py`, `agent_utils.py` |
 | `file_search` + vector store (managed RAG) | `specialist_agents.py`, `kb_setup.py` |
 | `response_format=json_object` (structured output) | `classifier.py`, `evaluator.py` |
@@ -136,13 +139,13 @@ python sft/fine_tune.py
 # add FINETUNED_MODEL=ft:gpt-4o-mini-... to .env
 ```
 
-**Step 4 — Evaluate**
+**Step 4 — Compare**
 
 ```bash
-python sft/evaluate.py
-# runs 20 held-out examples through both models using Responses API + file_search
-# prints per-example scores, writes data/sft/eval_report.md after every example
-# report includes actual replies for eyeballing quality
+python sft/compare_pipeline.py
+# runs 20 emails through the full pipeline with both models (real tool calls + file_search)
+# prints per-email scores and tool usage, writes data/sft/compare_report.md after every email
+# report includes actual replies and tools called for eyeballing quality
 ```
 
 ## Key files
@@ -169,7 +172,7 @@ agent-openai/
 │   ├── generate_guidelines.py  # extract behavioural guidelines from emails.csv via LLM
 │   ├── generate_dataset.py     # build train.jsonl + eval.jsonl for fine-tuning
 │   ├── fine_tune.py            # upload data, start SFT job, poll to completion
-│   └── evaluate.py             # compare base vs. fine-tuned on held-out eval set
+│   └── compare_pipeline.py     # compare base vs. fine-tuned using the full pipeline (real tool calls)
 └── data/
     ├── emails.csv                  # evaluation dataset (16,338 English emails)
     ├── knowledge_base.json         # KB source (uploaded per-category to vector store)
@@ -177,10 +180,10 @@ agent-openai/
     ├── training_set.json           # regression emails per skill
     ├── pipeline_results.json       # all pipeline run results
     ├── sft/
-    │   ├── train.jsonl             # 100 SFT training examples
-    │   ├── eval.jsonl              # 20 held-out eval examples
+    │   ├── train.jsonl             # SFT training examples
+    │   ├── eval.jsonl              # held-out examples (used by generate_dataset.py; not used by compare_pipeline)
     │   ├── model_id.txt            # fine-tuned model ID (written by fine_tune.py)
-    │   └── eval_report.md          # base vs. fine-tuned comparison report
+    │   └── compare_report.md       # base vs. fine-tuned pipeline comparison report
     └── skills/
         ├── billing/
         ├── returns/

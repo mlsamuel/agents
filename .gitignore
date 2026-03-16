@@ -3,6 +3,7 @@
 __pycache__/
 *.pyc
 eval_output.md
+compare_report.md
 notes*.txt
 node_modules/
 pipeline_results.json
