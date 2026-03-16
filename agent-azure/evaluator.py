@@ -48,30 +48,30 @@ def judge(email: dict, ground_truth: str, generated: str) -> dict:
 
     model_config = _get_model_config()
 
-    scores = {}
-    scores["groundedness"] = GroundednessEvaluator(model_config)(
+    dims = ["groundedness", "relevance", "coherence", "fluency"]
+    raw = {}
+    raw["groundedness"] = GroundednessEvaluator(model_config)(
         query=query, response=generated, context=ground_truth
-    )["groundedness"]
-    scores["relevance"] = RelevanceEvaluator(model_config)(
-        query=query, response=generated
-    )["relevance"]
-    scores["coherence"] = CoherenceEvaluator(model_config)(
-        query=query, response=generated
-    )["coherence"]
-    scores["fluency"] = FluencyEvaluator(model_config)(
-        response=generated
-    )["fluency"]
-
-    scores["avg"] = (
-        scores["groundedness"] + scores["relevance"] + scores["coherence"] + scores["fluency"]
-    ) / 4
-
-    lowest_key = min(
-        ["groundedness", "relevance", "coherence", "fluency"],
-        key=lambda k: scores[k],
     )
+    raw["relevance"] = RelevanceEvaluator(model_config)(
+        query=query, response=generated
+    )
+    raw["coherence"] = CoherenceEvaluator(model_config)(
+        query=query, response=generated
+    )
+    raw["fluency"] = FluencyEvaluator(model_config)(
+        response=generated
+    )
+
+    scores = {k: raw[k][k] for k in dims}
+    scores["avg"] = sum(scores[k] for k in dims) / len(dims)
+
+    lowest_key = min(dims, key=lambda k: scores[k])
     lowest_val = scores[lowest_key]
-    scores["comment"] = f"low {lowest_key} ({lowest_val:.0f}/5)" if lowest_val < 4 else "none"
+    reason = raw[lowest_key].get(f"{lowest_key}_reason", "")
+    scores["comment"] = reason if reason else (
+        f"low {lowest_key} ({lowest_val:.0f}/5)" if lowest_val < 4 else "none"
+    )
 
     return scores
 
