@@ -34,7 +34,7 @@ A customer support agent system built on Azure AI Foundry. Demonstrates Azure-na
 
 ### [agent-openai](agent-openai/)
 
-The same pipeline built directly on the OpenAI APIs, extended with Supervised Fine-Tuning (SFT) to bake agent behaviour guidelines into model weights. Demonstrates the full SFT lifecycle: dataset generation with quality filtering, fine-tuning job management, and automated evaluation comparing the fine-tuned model against the base model using the Responses API as judge.
+The same pipeline built directly on the OpenAI APIs, extended with Supervised Fine-Tuning (SFT) for domain adaptation. Demonstrates the full SFT lifecycle: tool-call trace generation via teacher-student distillation (gpt-4o → gpt-4.1-mini), fine-tuning job management, and pipeline comparison running both models through real tool calls and file_search side-by-side.
 
 **Transport:** in-process (OpenAI Assistants API with `file_search` + function tools for specialist agents)
 
