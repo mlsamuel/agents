@@ -9,6 +9,7 @@ import json
 import logging
 import os
 import time
+from opentelemetry.trace import SpanKind
 from dotenv import load_dotenv
 from azure.ai.agents import AgentsClient
 from azure.ai.agents.models import FileSearchTool
@@ -73,7 +74,7 @@ def main() -> None:
 
     file_search = FileSearchTool(vector_store_ids=[vector_store_id])
 
-    with tracer.start_as_current_span("agent-session") as session_span:
+    with tracer.start_as_current_span("agent-session", kind=SpanKind.SERVER) as session_span:
         # Create agent
         agent = client.create_agent(
             model=os.environ.get("MODEL_DEPLOYMENT_NAME", "gpt-4o"),
@@ -107,7 +108,7 @@ def main() -> None:
                 break
 
             turn += 1
-            with tracer.start_as_current_span("turn") as turn_span:
+            with tracer.start_as_current_span("turn", kind=SpanKind.CONSUMER) as turn_span:
                 turn_span.set_attribute("turn", turn)
 
                 # --- Input guardrail ---

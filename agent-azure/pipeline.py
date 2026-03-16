@@ -15,6 +15,7 @@ import csv
 import os
 from dataclasses import dataclass
 from pathlib import Path
+from opentelemetry.trace import SpanKind
 
 from logger import get_logger  # must be first — silences third-party loggers
 from dotenv import load_dotenv
@@ -134,7 +135,7 @@ def _run_email(client, email, i, args, vector_store_id, tracer, out_path, pool: 
     print(f"\n EMAIL [{i}]: {subject[:65]}")
     print("-" * 70)
 
-    with tracer.start_as_current_span("pipeline.email") as span:
+    with tracer.start_as_current_span("pipeline.email", kind=SpanKind.CONSUMER) as span:
         span.set_attribute("email.index", i)
         span.set_attribute("email.subject", subject[:120])
 
