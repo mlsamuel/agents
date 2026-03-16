@@ -40,7 +40,7 @@ def configure_logging() -> logging.Logger:
     log = logging.getLogger("kb_agent")
     log.setLevel(logging.INFO)
     log.addHandler(handler)
-    log.propagate = False
+    log.propagate = True  # propagate to root so Azure Monitor LoggingHandler receives records
     return log
 
 

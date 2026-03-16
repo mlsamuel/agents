@@ -31,7 +31,7 @@ _level = getattr(logging, os.environ.get("LOG_LEVEL", "INFO").upper(), logging.I
 _agents_logger = logging.getLogger("agents")
 _agents_logger.setLevel(_level)
 _agents_logger.addHandler(_handler)
-_agents_logger.propagate = False  # don't bubble up to the silenced root
+_agents_logger.propagate = True  # propagate to root so Azure Monitor LoggingHandler receives records
 
 
 def get_logger(name: str) -> logging.Logger:
